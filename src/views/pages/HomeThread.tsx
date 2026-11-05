@@ -166,6 +166,14 @@ export default function HomeThread({ v }: Props) {
                           </div>
                         </>
                       )}
+                      {m?.hasRefs && (
+                        <div style={{"display":"flex","flexWrap":"wrap","alignItems":"center","gap":"6px","marginTop":"10px"}}>
+                          <span style={{"fontSize":"10.5px","letterSpacing":".1em","color":"var(--faint)","marginRight":"2px"}}>{"RECORDS"}</span>
+                          {arr(m?.refs).map((r: any, ri: number) => (
+                            <button key={ri} className="om-ref om-chip" onClick={r?.open} title="Open record" style={{"height":"24px"}}>{txt(r?.label)}</button>
+                          ))}
+                        </div>
+                      )}
                       {m?.hasActions && (
                         <>
                           <div style={{"display":"flex","flexWrap":"wrap","gap":"8px","marginTop":"16px"}}>

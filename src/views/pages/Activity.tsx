@@ -243,7 +243,7 @@ export default function Activity({ v }: Props) {
                                 {txt(r?.why)}
                               </div>
                               <div style={{"display":"flex","alignItems":"center","gap":"9px","flexWrap":"wrap","marginTop":"2px"}}>
-                                <button className="ixb" onClick={r?.open} style={css(r?.primaryStyle)}>
+                                <button className="ixb" onClick={r?.openRecord} style={css(r?.primaryStyle)}>
                                   {txt(r?.primary)}
                                 </button>
                                 <button className="ix10" onClick={r?.open} style={{"flex":"none","height":"30px","padding":"0 13px","background":"var(--chip)","border":"1px solid var(--chip-border)","borderRadius":"var(--r-ctl,10px)","fontSize":"12.5px","color":"var(--body)","cursor":"pointer","transition":"border-color .2s var(--ease),color .2s var(--ease)"}}>

@@ -1,5 +1,6 @@
 import { Fragment } from "react";
 import { arr, cat, css, txt } from "../../runtime/template";
+import { JourneyStrip, BriefWidget } from "../../oranmore/HomeRail";
 
 type Props = { v: any };
 
@@ -91,12 +92,13 @@ export default function HomeWidgetRail({ v }: Props) {
             </div>
           </>
         )}
+        {v.show?.journey && <JourneyStrip om={v.om} edit={v.widgetEdit} onRemove={v.removeJourney} />}
         {v.show?.inbox && (
           <>
             <div style={{"background":"var(--surface)","border":"1px solid var(--border)","borderRadius":"var(--card-r,18px)","backdropFilter":"blur(20px) saturate(1.3)","boxShadow":"var(--card-shadow)","transition":"transform .28s var(--ease),border-color .24s var(--ease),box-shadow .28s var(--ease)","padding":"20px 22px 10px"}}>
               <div style={{"display":"flex","alignItems":"center","gap":"10px"}}>
                 <div style={{"flex":"1","fontSize":"13.5px","fontWeight":"500"}}>
-                  {"Action inbox"}
+                  {"Today\u2019s attention"}
                 </div>
                 <span style={{"height":"24px","display":"flex","alignItems":"center","padding":"0 10px","background":"var(--surface-2)","border":"1px solid var(--border)","borderRadius":"var(--r-sm,9px)","fontFamily":"var(--mono)","fontSize":"11px","color":"var(--dim)"}}>
                   {txt(v.inboxCount)}
@@ -141,6 +143,7 @@ export default function HomeWidgetRail({ v }: Props) {
             </div>
           </>
         )}
+        {v.show?.brief && <BriefWidget om={v.om} edit={v.widgetEdit} onRemove={v.removeBrief} />}
         {v.show?.work && (
           <>
             <div style={{"background":"var(--surface)","border":"1px solid var(--border)","borderRadius":"var(--card-r,18px)","backdropFilter":"blur(20px) saturate(1.3)","boxShadow":"var(--card-shadow)","transition":"transform .28s var(--ease),border-color .24s var(--ease),box-shadow .28s var(--ease)","padding":"20px 22px 12px"}}>
@@ -225,7 +228,7 @@ export default function HomeWidgetRail({ v }: Props) {
             <div style={{"background":"var(--surface)","border":"1px solid var(--border)","borderRadius":"var(--card-r,18px)","backdropFilter":"blur(20px) saturate(1.3)","boxShadow":"var(--card-shadow)","transition":"transform .28s var(--ease),border-color .24s var(--ease),box-shadow .28s var(--ease)","padding":"20px 22px 10px"}}>
               <div style={{"display":"flex","alignItems":"center","gap":"10px"}}>
                 <div style={{"flex":"1","fontSize":"13.5px","fontWeight":"500"}}>
-                  {"Site visits this week"}
+                  {"Loads moving this week"}
                 </div>
                 {v.widgetEdit && (
                   <>
@@ -240,7 +243,7 @@ export default function HomeWidgetRail({ v }: Props) {
               <div style={{"marginTop":"6px"}}>
                 {arr(v.visitWidget).map((v: any, i21: number) => (
                   <Fragment key={i21}>
-                    <div style={{"display":"flex","alignItems":"center","gap":"11px","padding":"11px 0","borderTop":"1px solid var(--border)"}}>
+                    <div onClick={v?.open} style={{"display":"flex","alignItems":"center","gap":"11px","padding":"11px 0","borderTop":"1px solid var(--border)","cursor":"pointer"}}>
                       <span style={css(cat("width:7px;height:7px;border-radius:2px;flex:none;background:", v?.dot))} />
                       <span style={{"flex":"1","minWidth":"0","fontSize":"12.5px","overflow":"hidden","textOverflow":"ellipsis","whiteSpace":"nowrap"}}>
                         {txt(v?.title)}

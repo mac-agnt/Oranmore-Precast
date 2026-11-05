@@ -2,11 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "pulse-dev",
+      "name": "oranmore-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5176", "--strictPort"],
-      "port": 5176,
-      "autoPort": false
+      "runtimeArgs": ["run", "dev", "--", "--port", "5187", "--strictPort"],
+      "port": 5187,
+      "autoPort": true
     }
   ]
 }

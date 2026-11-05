@@ -1,0 +1,48 @@
+/* Customer portal preview: an external, light-surfaced tracker. Tokens are
+   re-scoped so the shared kit (inputs, buttons) renders light inside it. */
+.omp-portal{--ink:#1c1d21;--body:#3a3c42;--dim:#5f6168;--faint:#888a90;--border:rgba(20,22,28,.1);--border-strong:rgba(20,22,28,.22);
+  --surface:#ffffff;--surface-2:#f3f2ef;--surface-faint:#faf9f7;--accent:#D9512A;--accent-fill:#D9512A;--accent-glow:none;--on-accent:#ffffff;
+  --accent-line:rgba(217,81,42,.35);--accent-faint:rgba(217,81,42,.06);--ok:#1d7a4a;--warn:#9a6414;--bad:#b3261e;
+  background:#f6f5f2;color:var(--ink);border-radius:var(--card-r,18px);overflow:hidden;border:1px solid rgba(255,255,255,.12);box-shadow:0 20px 50px rgba(0,0,0,.35);align-self:start}
+.omp-bar{display:flex;align-items:center;gap:12px;padding:14px 20px;background:#2C2D32;color:#f3f3f2}
+.omp-bar .omp-sub{color:#b9bac0}
+.omp-brand{font-size:14px;font-weight:600;letter-spacing:-.2px}
+.omp-pill{font-size:10.5px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:4px 9px;border-radius:999px;background:rgba(244,99,58,.2);color:#F7845E}
+.omp-body{padding:20px}
+.omp-sub{font-size:11.5px;color:var(--dim);margin-top:3px;line-height:1.4}
+.omp-eyebrow{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.omp-h{font-size:22px;font-weight:600;letter-spacing:-.5px;margin-top:4px}
+.omp-proj{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap}
+.omp-status{padding:10px 14px;border-radius:12px;background:#fff;border:1px solid var(--border);min-width:200px}
+.omp-status b{display:block;margin-top:4px;font-size:13px;color:#D9512A}
+.omp-miles{display:flex;gap:0;margin:20px 0 6px;overflow-x:auto;padding-bottom:4px}
+.omp-mile{position:relative;flex:1 1 0;min-width:110px;padding:0 8px 0 0}
+.omp-mile::before{content:"";position:absolute;left:12px;right:0;top:11px;height:2px;background:rgba(20,22,28,.12)}
+.omp-mile:last-child::before{display:none}
+.omp-mile.done::before{background:#1d7a4a}
+.omp-dot{position:relative;z-index:1;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:#fff;border:2px solid rgba(20,22,28,.18);color:#fff}
+.omp-mile.done .omp-dot{background:#1d7a4a;border-color:#1d7a4a}
+.omp-mile.active .omp-dot,.omp-mile.waiting .omp-dot{border-color:#D9512A;box-shadow:0 0 0 4px rgba(217,81,42,.12)}
+.omp-mile.blocked .omp-dot{border-color:#D9512A;background:#D9512A}
+.omp-ml{font-size:12px;font-weight:600;margin-top:8px}
+.omp-ms{font-size:11px;color:var(--dim);margin-top:3px;line-height:1.35;padding-right:8px}
+.omp-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:16px}
+@media (max-width:860px){.omp-grid{grid-template-columns:1fr}}
+.omp-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:14px 16px;min-width:0}
+.omp-ct{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:10px}
+.omp-count{min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#D9512A;color:#fff;font-size:11px;display:inline-flex;align-items:center;justify-content:center}
+.omp-req{padding:10px 0;border-top:1px solid var(--border)}
+.omp-req:first-of-type{border-top:0}
+.omp-id{font-family:var(--mono);font-size:11px;color:var(--faint);padding-top:2px;white-space:nowrap}
+.omp-q{font-size:13px;font-weight:500;color:var(--ink)}
+.omp-empty{font-size:12px;color:var(--dim)}
+.omp-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px}
+.omp-kv span{color:var(--dim)}.omp-kv b{font-weight:500}
+.omp-line{display:flex;gap:10px;align-items:center;font-size:12px;padding:6px 0;border-top:1px solid var(--border);flex-wrap:wrap}
+.omp-line:first-of-type{border-top:0}
+.omp-line span{color:var(--dim)}
+.omp-tag{margin-left:auto;font-size:10.5px;padding:2px 8px;border-radius:999px;background:rgba(20,22,28,.06);color:var(--dim) !important}
+.omp-tag.ok{background:rgba(29,122,74,.1);color:#1d7a4a !important}
+.omp-msg{font-size:12px;padding:6px 0;border-top:1px solid var(--border);color:var(--ink)}
+.omp-msg:first-child{border-top:0}
+.omp-msg span{display:block;font-size:10.5px;color:var(--faint);margin-bottom:2px}

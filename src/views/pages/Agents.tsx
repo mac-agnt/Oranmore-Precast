@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { arr, cat, css, txt } from "../../runtime/template";
 import AgentFace from "../../components/AgentFace";
+import AgentDossier from "../../oranmore/AgentDossier";
 
 type Props = { v: any };
 
@@ -227,6 +228,7 @@ export default function Agents({ v }: Props) {
             </div>
           </div>
         </div>
+        <AgentDossier om={v.om} id={v.agentIdRaw} />
       </div>
     </>
   );

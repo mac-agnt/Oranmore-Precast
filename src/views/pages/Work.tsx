@@ -251,7 +251,7 @@ export default function Work({ v }: Props) {
                       </svg>
                     </button>
                     <div style={{"flex":"1","minWidth":"0"}}>
-                      <div style={css(cat("font-size:15px;line-height:1.35;color:", t?.color, ";text-decoration:", t?.strike))}>
+                      <div onClick={t?.open} title="Open linked record" style={css(cat("cursor:pointer;font-size:15px;line-height:1.35;color:", t?.color, ";text-decoration:", t?.strike))}>
                         {txt(t?.title)}
                       </div>
                       <div style={{"display":"flex","flexWrap":"wrap","alignItems":"center","gap":"18px","marginTop":"8px"}}>
@@ -267,7 +267,7 @@ export default function Work({ v }: Props) {
                         ))}
                       </div>
                     </div>
-                    <span style={css(t?.statusStyle)}>
+                    <span onClick={t?.cycle} title="Click to change status" style={{...css(t?.statusStyle), cursor:"pointer"}}>
                       <span style={css(t?.statusDot)} />
                       {txt(t?.status)}
                     </span>
@@ -352,11 +352,11 @@ export default function Work({ v }: Props) {
                       </button>
                       {a?.pending && (
                         <>
-                          <button className="ixp" onClick={a?.approve} style={{"height":"30px","padding":"0 14px","border":"0","borderRadius":"var(--cta-r,9px)","background":"var(--accent-fill,var(--accent))","color":"var(--on-accent)","boxShadow":"var(--accent-glow,none)","fontSize":"12.5px","fontWeight":"500","cursor":"pointer","transition":"background .2s var(--ease),transform .18s var(--ease)"}}>
-                            {"Approve"}
+                          <button className="ixp" disabled={!!a?.blocked} title={a?.blocked || ""} onClick={a?.blocked ? undefined : a?.approve} style={{"height":"30px","padding":"0 14px","border":"0","borderRadius":"var(--cta-r,9px)","background":"var(--accent-fill,var(--accent))","color":"var(--on-accent)","boxShadow":"var(--accent-glow,none)","fontSize":"12.5px","fontWeight":"500","cursor":a?.blocked ? "not-allowed" : "pointer","opacity":a?.blocked ? ".45" : "1","transition":"background .2s var(--ease),transform .18s var(--ease)"}}>
+                            {txt(a?.actionLabel || "Approve")}
                           </button>
-                          <button className="ixz" onClick={a?.approve} style={{"height":"30px","padding":"0 13px","border":"1px solid var(--border)","background":"none","borderRadius":"var(--r-ctl,9px)","fontSize":"12.5px","color":"var(--ink)","cursor":"pointer","transition":"border-color .2s var(--ease)"}}>
-                            {"Decline"}
+                          <button className="ixz" onClick={a?.openRecord} style={{"height":"30px","padding":"0 13px","border":"1px solid var(--border)","background":"none","borderRadius":"var(--r-ctl,9px)","fontSize":"12.5px","color":"var(--ink)","cursor":"pointer","transition":"border-color .2s var(--ease)"}}>
+                            {"Open record"}
                           </button>
                         </>
                       )}
