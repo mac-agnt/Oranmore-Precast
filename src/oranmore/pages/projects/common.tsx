@@ -2,7 +2,8 @@
 import type { Om, Tone } from "../../ui";
 import { Badge } from "../../ui";
 import type { Order, EventSource } from "../../types";
-import { journey, orderLabel, account, dev } from "../../selectors";
+import { journey, orderLabel, account, dev, TODAY } from "../../selectors";
+import { gbpShort, daysBetween, dateShort } from "../../format";
 import type { Stage as JStage } from "../../selectors";
 
 export const TABS = ["overview", "awards", "contract", "rfis", "journey", "portal"];
@@ -63,4 +64,34 @@ export function progressOf(om: Om, o: Order) {
   const st = journey(om.s, o.id);
   const done = st.filter(x => x.state === "done").length;
   return { st, done, total: st.length, blocked: st.filter(x => x.state === "blocked"), current: st.find(x => x.state !== "done") };
+}
+
+/** Dense numbers for one order: money, deliveries, lots and open questions. */
+export function OrderNumbers({ om, o }: { om: Om; o: Order }) {
+  const s = om.s;
+  const inv = s.invoices.filter(i => i.orderId === o.id);
+  const billed = inv.filter(i => ["Issued", "Paid", "Handoff simulated"].includes(i.stage)).reduce((t, i) => t + i.net, 0);
+  const held = inv.filter(i => i.stage === "Held").reduce((t, i) => t + i.net, 0);
+  const loads = s.loads.filter(l => l.orderId === o.id);
+  const lots = s.lots.filter(l => l.orderId === o.id);
+  const rf = s.rfis.filter(r => r.orderId === o.id);
+  const cells: [string, string, string?, (() => void)?][] = [
+    ["Contract", gbpShort(o.value), undefined, () => om.open({ kind: "order", id: o.id })],
+    ["Billed", gbpShort(billed), o.value ? Math.round((billed / o.value) * 100) + "%" : "", () => om.go("Finance", "overview")],
+    ["Held", held ? gbpShort(held) : "·", held ? "on proof" : "", () => om.go("Finance", "readiness")],
+    ["Loads", loads.filter(l => l.status === "POD verified").length + " / " + loads.length, "verified", () => om.go("Logistics", "loads")],
+    ["Lots cast", lots.filter(l => l.status === "Complete").length + " / " + lots.length, lots.reduce((t, l) => t + l.m2, 0).toLocaleString("en-GB") + " m²", () => om.go("Plants & Planning", "production")],
+    ["RFIs open", String(rf.filter(r => r.status !== "Resolved").length), rf.length + " raised", () => om.setSub("rfis")],
+    ["Since award", daysBetween(o.awarded, TODAY) + "d", dateShort(o.awarded)],
+    ["Tonnes sent", loads.filter(l => l.claimed).reduce((t, l) => t + l.tonnes, 0).toFixed(0) + " t", loads.filter(l => l.claimed).length + " deliveries"],
+  ];
+  return (
+    <div className="om-onum">
+      {cells.map(([k, v, sub, go]) => (
+        <button key={k} onClick={go} disabled={!go} style={go ? undefined : { cursor: "default" }}>
+          <span className="k">{k}</span><span className="v">{v}</span>{sub && <span className="s">{sub}</span>}
+        </button>
+      ))}
+    </div>
+  );
 }

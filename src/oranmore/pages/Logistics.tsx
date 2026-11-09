@@ -5,9 +5,9 @@ import "../../styles/om-ops.css";
 import type { Om } from "../ui";
 import { Page, Head, Grid, Card, Badge, Btn, Seg, Kpi, Bar, Table, Facts, RefLink, LineageChip, Field, Empty, useUi, Dot } from "../ui";
 import type { Load, LoadStatus, Carrier } from "../types";
-import { orderLabel, byId, dev, podQueue, carrierOf, loadAwaitingProof, nowStamp } from "../selectors";
+import { orderLabel, byId, dev, podQueue, carrierOf, loadAwaitingProof, nowStamp, carrierStats } from "../selectors";
 import { CARRIER_STEPS } from "../actions";
-import { gbp, num, dateShort, dayShort, stamp, hoursSince } from "../format";
+import { gbp, num, dateShort, dayShort, stamp, hoursSince, pct } from "../format";
 
 const DAYS = ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"];
 const STATUSES: LoadStatus[] = ["Planned", "Loaded", "Dispatched", "Arrival claimed", "POD submitted", "POD verified", "Exception"];
@@ -36,27 +36,48 @@ function InvoiceLine({ om, l }: { om: Om; l: Load }) {
 }
 
 /* ── 1. Transport planner ──────────────────────────────────────────────── */
+function readiness(om: Om, l: Load): { tone: "ok" | "warn" | "bad" | "info"; text: string } {
+  if (!["Planned", "Loaded"].includes(l.status)) return { tone: l.status === "Arrival claimed" || l.status === "Exception" ? "bad" : "info", text: l.status };
+  const lots = om.s.lots.filter(x => l.lotIds.includes(x.id));
+  if (lots.some(x => x.status !== "Complete")) return { tone: "warn", text: "Lot still casting" };
+  if (lots.some(x => x.qa !== "Released")) return { tone: "bad", text: "QA sign-off needed" };
+  if (/TBC/.test(l.driver)) return { tone: "warn", text: "Driver TBC" };
+  return { tone: "ok", text: "Ready to collect" };
+}
+const timeOf = (s: string) => s.split(" ")[1] || "";
 function Planner({ om }: { om: Om }) {
   const s = om.s;
   const [plant, setPlant] = useUi<string>(om, "log:plant", "All");
   const [carrier, setCarrier] = useUi<string>(om, "log:carrier", "All");
+  const [view, setView] = useUi<"board" | "list">(om, "log:view", "board");
   const match = (l: Load) => (plant === "All" || l.plant === plant) && (carrier === "All" || l.carrierId === carrier);
   const loads = s.loads.filter(match);
   const open = loads.filter(l => l.collect.slice(0, 10) < DAYS[0] && l.status !== "POD verified");
-  const week = loads.filter(l => DAYS.includes(l.collect.slice(0, 10)));
+  const week = loads.filter(l => DAYS.includes(l.collect.slice(0, 10))).sort((a, b) => a.collect.localeCompare(b.collect));
+  const past = s.loads.filter(l => l.collect.slice(0, 10) < DAYS[0]);
+  const lw = carrierStats({ ...s, loads: past });
+  const lotM2 = (l: Load) => s.lots.filter(x => l.lotIds.includes(x.id)).reduce((t, x) => t + x.m2, 0);
   const card = (l: Load) => {
     const d = site(om, l);
+    const lots = s.lots.filter(x => l.lotIds.includes(x.id));
+    const r = readiness(om, l);
+    const deliverDay = l.deliver.split(" ")[0];
     return (
       <button key={l.id} className={"om-lcard" + (l.status === "Arrival claimed" || l.status === "Exception" ? " alert" : "")} onClick={() => om.open({ kind: "load", id: l.id })}>
-        <div className="om-row" style={{ gap: 6 }}><span className="id">{l.id}</span><span style={{ marginLeft: "auto" }}><Badge>{l.status}</Badge></span></div>
+        <div className="om-row" style={{ gap: 6 }}><span className="om-mono om-small om-ink" style={{ fontWeight: 600 }}>{timeOf(l.collect)}</span><span className="id">{l.id}</span><span style={{ marginLeft: "auto" }}><Badge>{l.status}</Badge></span></div>
         <div className="t">{l.plant} → {d?.name}</div>
-        <div className="m">{d?.town} · {l.lotIds.join(", ") || "Lot n/a"}</div>
-        <div className="m">Collect {stamp(l.collect).split(", ")[1] || stamp(l.collect)} · deliver {l.deliver.split(" ").slice(1).join(" ") || l.deliver}</div>
+        <div className="m">{d?.town} · deliver {deliverDay !== l.collect.slice(0, 10) ? dayShort(deliverDay) + " " : ""}{l.deliver.split(" ").slice(1).join(" ")}</div>
+        <div className="om-lines">
+          {lots.length ? lots.map(x => <div key={x.id} className="om-line"><span className="om-mono">{x.id}</span><span>{x.product}</span><span className="om-mono" style={{ marginLeft: "auto" }}>{x.units} u{x.m2 ? " · " + num(x.m2) + " m²" : ""}</span></div>) : <div className="om-line om-faint">No lot linked</div>}
+        </div>
         <div className="m">{carrierShort(om, l)} · {l.trailer}</div>
-        <div className="m">{l.siteContact} · {num(l.tonnes)} t · {l.pieces} pcs</div>
+        <div className="m" style={{ color: /TBC/.test(l.driver) ? "var(--warn)" : undefined }}>{/TBC/.test(l.driver) ? "Driver not booked" : l.driver.replace(" (mock)", "")} · {l.siteContact.replace(" (demo contact)", "")}</div>
+        <div className="om-row" style={{ gap: 6, marginTop: 4 }}><Badge tone={r.tone}>{r.text}</Badge><span className="om-mono om-tiny om-faint" style={{ marginLeft: "auto" }}>{num(l.tonnes)} t · {l.pieces} pcs</span></div>
       </button>
     );
   };
+  const totals = (xs: Load[]) => ({ n: xs.length, t: xs.reduce((a, l) => a + l.tonnes, 0), m: xs.reduce((a, l) => a + lotM2(l), 0), tbc: xs.filter(l => l.status === "Planned" && /TBC/.test(l.driver)).length, risk: xs.filter(l => ["warn", "bad"].includes(readiness(om, l).tone)).length });
+  const wk = totals(week);
   return (
     <>
       <div className="om-row" style={{ flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
@@ -65,25 +86,79 @@ function Planner({ om }: { om: Om }) {
           <option value="All">All carriers</option>
           {s.carriers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        <Seg options={[["board", "By day"], ["list", "List"]]} value={view} onChange={setView} />
         <span style={{ marginLeft: "auto" }}><LineageChip l={{ source: "Transport planner (mock)", updated: "2026-11-05 16:20", state: "Imported from transport planner (mock Excel). 1 conflict reviewed" }} /></span>
       </div>
-      <Banner>Imported from transport planner (mock Excel). Oranmore outsources haulage: every load is booked with a carrier and their subcontracted hauliers. There is no company-owned fleet.</Banner>
-      {open.length > 0 && (
-        <Card title="Still open from last week" sub="Collected before 09 Nov, proof not yet verified" style={{ marginTop: 14 }}>
-          <div className="om-board" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(210px,1fr))" }}>{open.map(card)}</div>
+      <div className="om-kpis" style={{ marginBottom: 12 }}>
+        <Kpi label="Tonnes to collect" value={num(wk.t)} sub={num(wk.m) + " m² hollowcore · " + week.filter(l => /HIAB/.test(l.trailer)).length + " HIAB loads"} />
+        <Kpi label="Drivers not booked" value={wk.tbc} tone={wk.tbc ? "warn" : "ok"} sub="carrier to confirm" />
+        <Kpi label="Not ready to collect" value={wk.risk} tone={wk.risk ? "warn" : "ok"} sub="casting, QA or driver" />
+        <Kpi label="Busiest day" value={(() => { const m = DAYS.map(d => ({ d, n: week.filter(l => l.collect.startsWith(d)).length })).sort((a, b) => b.n - a.n)[0]; return m ? dayShort(m.d) : "·"; })()} sub="most collections" />
+      </div>
+      <Grid style={{ marginBottom: 14 }}>
+        <Card span={7} title="Still open from last week" sub="Collected before 09 Nov, proof not yet verified · these hold invoices">
+          {open.length ? <div className="om-board" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))" }}>{open.map(card)}</div> : <Empty title="Nothing open from last week" hint="Every earlier load has verified proof." />}
+          {open.length > 0 && (
+            <table className="om-tbl" style={{ marginTop: 14 }}>
+              <thead><tr><th>Load</th><th>Waiting on</th><th className="r">Since claim</th><th className="r">Invoice held</th><th /></tr></thead>
+              <tbody>{open.map(l => { const inv = byId(s.invoices, l.invoiceId); return (
+                <tr key={l.id}>
+                  <td className="mono ink">{l.id}</td>
+                  <td className="om-muted om-small">{l.status === "Arrival claimed" ? "Photo, receiver and signature" : l.exception || "Office review"}</td>
+                  <td className="r mono" style={{ color: "var(--bad)" }}>{l.claimed ? hoursSince(l.claimed, nowStamp(s)) + " h" : "·"}</td>
+                  <td className="r mono">{inv ? gbp(inv.net) : "·"}</td>
+                  <td className="r"><Btn sm kind="primary" onClick={() => { om.setUi("sel:Logistics:pod", l.id); om.setSub("pod"); }}>{l.status === "Arrival claimed" ? "Request POD" : "Review"}</Btn></td>
+                </tr>); })}</tbody>
+            </table>
+          )}
+        </Card>
+        <Card span={5} title="Last week in numbers" sub={"Collections 02 to 06 Nov plus late October · " + lw.delivered + " delivered"} flush>
+          <div className="om-kpis" style={{ padding: "4px 18px 12px", gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
+            <Kpi label="In window" value={pct(lw.onTimePct)} sub={lw.onTime + " of " + lw.delivered} tone={lw.onTimePct < 0.85 ? "warn" : "ok"} onClick={() => om.setSub("carriers")} />
+            <Kpi label="POD turnaround" value={lw.podHours + " h"} sub="claim to accepted" onClick={() => om.setSub("pod")} />
+            <Kpi label="Tonnes moved" value={num(lw.tonnes)} sub={"across " + new Set(past.map(l => l.carrierId)).size + " hauliers"} />
+          </div>
+          <table className="om-tbl">
+            <thead><tr><th>Haulier</th><th className="r">Loads</th><th className="r">In window</th><th className="r">POD h</th></tr></thead>
+            <tbody>{s.carriers.map(c => { const cs = carrierStats({ ...s, loads: past }, c.id); return cs.delivered ? (
+              <tr key={c.id} className="click" onClick={() => { om.setUi("sel:Logistics:carriers", c.id); om.setSub("carriers"); }}>
+                <td className="ink">{c.name.replace(" (illustrative)", "")}</td><td className="r mono">{cs.delivered}</td>
+                <td className="r mono" style={{ color: cs.onTimePct < 1 ? "var(--warn)" : undefined }}>{cs.onTime}/{cs.delivered}</td><td className="r mono">{cs.podHours}</td>
+              </tr>) : null; })}</tbody>
+          </table>
+        </Card>
+      </Grid>
+      {view === "board" ? (
+        <div className="om-board">
+          {DAYS.map(d => {
+            const items = week.filter(l => l.collect.startsWith(d));
+            const tt = totals(items);
+            return (
+              <div key={d} className="om-board-col">
+                <div className="om-board-h" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+                  <b>{dayShort(d)}</b>
+                  <span className="om-faint om-tiny">{tt.n} load{tt.n === 1 ? "" : "s"} · {num(tt.t)} t{tt.m ? " · " + num(tt.m) + " m²" : ""}</span>
+                  {(tt.tbc > 0 || tt.risk > 0) && <span className="om-tiny" style={{ color: "var(--warn)" }}>{tt.risk} not ready{tt.tbc ? " · " + tt.tbc + " no driver" : ""}</span>}
+                </div>
+                {items.length ? items.map(card) : <div className="om-faint om-small" style={{ padding: "10px 4px" }}>No collections</div>}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <Card flush title="This week, every load" sub={week.length + " collections · click a row to open the load"}>
+          <Table<Load> rowKey={l => l.id} rows={week} onRow={l => om.open({ kind: "load", id: l.id })} cols={[
+            { k: "d", label: "Collect", render: l => <span className="om-mono">{dayShort(l.collect.slice(0, 10))} {timeOf(l.collect)}</span> },
+            { k: "id", label: "Load", render: l => <span className="mono ink">{l.id}</span> },
+            { k: "r", label: "Route", render: l => <>{l.plant} → {site(om, l)?.name}<div className="om-faint om-tiny">{site(om, l)?.town}</div></> },
+            { k: "x", label: "Contents", render: l => s.lots.filter(x => l.lotIds.includes(x.id)).map(x => x.product + " " + x.units + "u").join(", ") || "·" },
+            { k: "c", label: "Carrier / driver", render: l => <>{carrierShort(om, l)}<div className="om-tiny" style={{ color: /TBC/.test(l.driver) ? "var(--warn)" : "var(--faint)" }}>{/TBC/.test(l.driver) ? "Driver not booked" : l.driver.replace(" (mock)", "")}</div></> },
+            { k: "w", label: "Deliver", render: l => <span className="om-mono om-small">{l.deliver.split(" ").slice(1).join(" ")}</span> },
+            { k: "t", label: "Tonnes", align: "right", cls: "mono", render: l => num(l.tonnes) },
+            { k: "s", label: "Readiness", render: l => { const r = readiness(om, l); return <Badge tone={r.tone}>{r.text}</Badge>; } },
+          ]} />
         </Card>
       )}
-      <div className="om-board" style={{ marginTop: 14 }}>
-        {DAYS.map(d => {
-          const items = week.filter(l => l.collect.startsWith(d)).sort((a, b) => a.collect.localeCompare(b.collect));
-          return (
-            <div key={d} className="om-board-col">
-              <div className="om-board-h"><b>{dayShort(d)}</b><span className="om-faint om-small">{items.length} load{items.length === 1 ? "" : "s"} · {num(items.reduce((t, l) => t + l.tonnes, 0))} t</span></div>
-              {items.length ? items.map(card) : <div className="om-faint om-small" style={{ padding: "10px 4px" }}>No collections</div>}
-            </div>
-          );
-        })}
-      </div>
     </>
   );
 }
@@ -111,12 +186,17 @@ function Loads({ om }: { om: Om }) {
           ]} />
         </Card>
         {l && (
-          <Card span={5} title={l.id} sub={project(om, l)} right={<Badge>{l.status}</Badge>}>
+          <Card span={5} className="om-sticky" title={l.id} sub={project(om, l)} right={<Badge>{l.status}</Badge>}>
             <Facts items={[["From", l.plant], ["To", (site(om, l)?.name || "") + ", " + (site(om, l)?.town || "")], ["Lots", l.lotIds.length ? l.lotIds.map(id => <RefLink key={id} om={om} r={{ kind: "lot", id }} />) : "n/a"], ["Haulier", carrierShort(om, l)], ["Driver (mock)", l.driver], ["Trailer", l.trailer], ["Collection", stamp(l.collect)], ["Delivery window", l.deliver], ["Carrier claim", l.claimed ? stamp(l.claimed) : "—"], ["POD verified", l.pod.verified ? stamp(l.pod.verified) + " · " + l.pod.verifiedBy : "—"]]} />
             <div className="om-eyebrow" style={{ margin: "14px 0 8px" }}>Evidence</div>
             <Evidence l={l} />
             {l.exception && <div className="om-small" style={{ color: "var(--bad)", marginTop: 8 }}>{l.exception}</div>}
             {l.notes && <p className="om-small om-muted">{l.notes}</p>}
+            <div className="om-label" style={{ margin: "14px 0 8px" }}>Journey of this load</div>
+            <div className="om-track" style={{ gridTemplateColumns: "repeat(7,1fr)" }}>
+              {CARRIER_STEPS.map((c, i) => { const st = l.status === "POD verified" ? 7 : l.status === "POD submitted" ? 6 : l.carrierStep; return <div key={c} className={i < st ? "done" : i === st ? "on" : ""}><i /><span>{c}</span></div>; })}
+            </div>
+            {s.events.filter(e => e.ref.kind === "load" && e.ref.id === l.id).slice(0, 4).map(e => <div key={e.id} className="om-small" style={{ padding: "5px 0", borderTop: "1px solid var(--border)", marginTop: 6 }}><span className="om-mono om-faint">{stamp(e.at)}</span> · {e.title} <span className="om-faint">· {e.actor}</span></div>)}
             <div className="om-eyebrow" style={{ margin: "14px 0 8px" }}>Impacted invoice</div>
             <InvoiceLine om={om} l={l} />
             <div className="om-divider" />
@@ -137,27 +217,48 @@ function Carriers({ om }: { om: Om }) {
   const s = om.s;
   const [sel, setSel] = useUi<string>(om, "sel:Logistics:carriers", s.carriers[0]?.id || "");
   const c = byId(s.carriers, sel) || s.carriers[0];
-  const loads = c ? s.loads.filter(l => l.carrierId === c.id) : [];
+  const loads = c ? s.loads.filter(l => l.carrierId === c.id).sort((a, b) => b.collect.localeCompare(a.collect)) : [];
+  const all = carrierStats(s);
+  const cs = c ? carrierStats(s, c.id) : all;
   return (
     <Grid>
-      <div className="om-s-12"><Banner>Illustrative transport partners. Names, equipment and performance are demo data, not real carrier relationships.</Banner></div>
-      <Card span={7} flush title="Carrier directory">
-        <Table<Carrier> rowKey={x => x.id} rows={s.carriers} selKey={c?.id} onRow={x => setSel(x.id)} cols={[
-          { k: "n", label: "Carrier", render: x => <span className="ink">{x.name}</span> },
-          { k: "b", label: "Base", render: x => x.base },
-          { k: "e", label: "Equipment", render: x => x.equipment.join(", ") },
-          { k: "o", label: "On-time (mock)", render: x => <span className="om-row" style={{ gap: 8, minWidth: 110 }}><Bar value={x.onTime} max={100} color={x.onTime < 90 ? "var(--warn)" : "var(--ok)"} /><span className="om-mono">{x.onTime}%</span></span> },
-          { k: "a", label: "Active", align: "right", render: x => s.loads.filter(l => l.carrierId === x.id && l.status !== "POD verified").length, cls: "mono" },
-          { k: "i", label: "Issues", render: x => x.issues.length ? <Badge tone="warn">{x.issues.length}</Badge> : <span className="om-faint">None</span> },
-        ]} />
+      <div className="om-s-12"><Banner>Illustrative transport partners. Performance below is computed from the loads in this demo: claimed arrival against the booked delivery window, and claim to accepted POD.</Banner></div>
+      <div className="om-s-12 om-kpis">
+        <Kpi label="Hauliers on the panel" value={s.carriers.length} sub={s.carriers.reduce((t, x) => t + x.equipment.length, 0) + " vehicle types"} />
+        <Kpi label="Delivered in window" value={pct(all.onTimePct)} sub={all.onTime + " of " + all.delivered + " deliveries"} tone={all.onTimePct < 0.85 ? "warn" : "ok"} />
+        <Kpi label="Avg POD turnaround" value={all.podHours + " h"} sub="claim to accepted by a person" />
+        <Kpi label="Drivers not booked" value={all.tbc} sub="planned loads, driver TBC" tone={all.tbc ? "warn" : "ok"} onClick={() => om.setSub("planner")} />
+        <Kpi label="Claims without proof" value={all.noProof} sub={all.exceptions + " exception open"} tone={all.noProof ? "bad" : "ok"} onClick={() => om.setSub("pod")} />
+      </div>
+      <Card span={7} title="Carrier scorecard" sub="Delivered in the booked window, from the loads in this demo · click a haulier">
+        <div className="vz-tiles" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))" }}>
+          {s.carriers.map(x => {
+            const k = carrierStats(s, x.id);
+            const issues = x.issues.length + k.tbc;
+            return (
+              <button key={x.id} className={"vz-tile" + (x.id === c?.id ? " sel" : "")} onClick={() => setSel(x.id)}>
+                <div className="t"><b>{x.name.replace(" (illustrative)", "")}</b>{issues ? <Badge tone="warn" dot={false}>{issues} issue{issues > 1 ? "s" : ""}</Badge> : <Badge tone="ok" dot={false}>Clear</Badge>}</div>
+                <div className="om-row" style={{ alignItems: "baseline", gap: 8 }}><span className="n" style={{ color: k.delivered && k.onTimePct < 0.85 ? "var(--warn)" : undefined }}>{k.delivered ? pct(k.onTimePct) : "·"}</span><span className="om-faint om-tiny">in window · {k.onTime}/{k.delivered}</span></div>
+                <Bar value={k.onTimePct} max={1} color={k.onTimePct < 0.85 ? "var(--warn)" : "var(--ok)"} height={6} />
+                <div className="f"><span>POD {k.podHours ? k.podHours + " h" : "·"}</span><span>{num(k.tonnes)} t moved</span><span>{k.open} open</span></div>
+                <div className="d">{x.base} · {x.equipment.join(", ")}</div>
+              </button>
+            );
+          })}
+        </div>
       </Card>
       {c && (
-        <Card span={5} title={c.name} sub={c.base + " · " + c.contact}>
+        <Card span={5} className="om-sticky" title={c.name} sub={c.base + " · " + c.contact}>
           <div className="om-row" style={{ flexWrap: "wrap", gap: 6 }}>{c.equipment.map(e => <span key={e} className="om-chip">{e}</span>)}</div>
-          <div className="om-eyebrow" style={{ margin: "14px 0 8px" }}>Issue history</div>
-          {c.issues.length ? c.issues.map(i => <div key={i} className="om-row om-small" style={{ padding: "3px 0" }}><Dot tone="warn" />{i}</div>) : <div className="om-faint om-small">No issues logged.</div>}
-          <div className="om-eyebrow" style={{ margin: "14px 0 8px" }}>Loads</div>
-          {loads.map(l => <div key={l.id} className="om-row om-small" style={{ padding: "4px 0", borderTop: "1px solid var(--border)" }}><RefLink om={om} r={{ kind: "load", id: l.id }} /><span className="om-muted" style={{ flex: 1, minWidth: 0 }}>{site(om, l)?.name} · {dateShort(l.collect)}</span><Badge>{l.status}</Badge></div>)}
+          <div className="om-kpis" style={{ marginTop: 12, gridTemplateColumns: "repeat(3,minmax(0,1fr))" }}>
+            <Kpi label="In window" value={cs.delivered ? pct(cs.onTimePct) : "·"} sub={cs.onTime + " of " + cs.delivered} tone={cs.delivered && cs.onTimePct < 0.85 ? "warn" : undefined} />
+            <Kpi label="POD turnaround" value={cs.podHours ? cs.podHours + " h" : "·"} />
+            <Kpi label="Open loads" value={cs.open} sub={cs.tbc ? cs.tbc + " driver TBC" : "drivers booked"} tone={cs.tbc ? "warn" : undefined} />
+          </div>
+          <div className="om-label" style={{ margin: "14px 0 6px" }}>Issues</div>
+          {c.issues.length || cs.late.length ? <>{c.issues.map(i => <div key={i} className="om-row om-small" style={{ padding: "3px 0" }}><Dot tone="warn" />{i}</div>)}{cs.late.map(l => <div key={l.id} className="om-row om-small" style={{ padding: "3px 0" }}><Dot tone="warn" />{l.id} arrived after the window{l.notes ? ": " + l.notes : ""}</div>)}</> : <div className="om-faint om-small">No issues logged.</div>}
+          <div className="om-label" style={{ margin: "14px 0 6px" }}>Loads, newest first</div>
+          {loads.map(l => <div key={l.id} className="om-row om-small" style={{ padding: "5px 0", borderTop: "1px solid var(--border)" }}><RefLink om={om} r={{ kind: "load", id: l.id }} /><span className="om-muted" style={{ flex: 1, minWidth: 0 }}>{site(om, l)?.name} · {dateShort(l.collect)}</span><span className="om-mono om-faint om-tiny">{num(l.tonnes)} t</span><Badge>{l.status}</Badge></div>)}
         </Card>
       )}
     </Grid>
@@ -271,6 +372,8 @@ function SignaturePad({ onDone, done }: { onDone: () => void; done: boolean }) {
   );
 }
 
+const PHASES: [string, number][] = [["Collect", 0], ["Travel", 2], ["Site", 3], ["Proof", 4], ["Done", 6]];
+const SAFETY = ["Lifting plan and crane confirmed with site", "Exclusion zone set before unloading", "Hard hat, hi-vis and gloves on"];
 function CarrierApp({ om }: { om: Om }) {
   const s = om.s;
   const active = s.loads.filter(l => l.status !== "POD verified").sort((a, b) => a.collect.localeCompare(b.collect));
@@ -280,13 +383,22 @@ function CarrierApp({ om }: { om: Om }) {
   const [receiver, setReceiver] = useState("");
   const [exc, setExc] = useState("");
   const [showExc, setShowExc] = useState(false);
+  const [info, setInfo] = useState(false);
   const l = byId(s.loads, sel);
   const d = l ? site(om, l) : undefined;
+  const o = l ? byId(s.orders, l.orderId) : undefined;
+  const cf = (k: string) => o?.contract.find(f => f.key === k)?.value || "";
+  const lots = l ? s.lots.filter(x => l.lotIds.includes(x.id)) : [];
   const step = l ? (l.status === "POD submitted" || l.status === "POD verified" ? 6 : l.carrierStep) : 0;
-  const pick = (id: string) => { setSel(id); setScreen("load"); setChecks({}); setReceiver(""); setExc(""); setShowExc(false); };
-  const COLLECT = ["Piece count matches delivery note", "Straps and bearers checked", "Lot labels match " + (l?.lotIds.join(", ") || "load")];
-  const events = l ? s.events.filter(e => e.ref.kind === "load" && e.ref.id === l.id).slice(0, 5) : [];
+  const pick = (id: string) => { setSel(id); setScreen("load"); setChecks({}); setReceiver(""); setExc(""); setShowExc(false); setInfo(false); };
+  const COLLECT = ["Piece count matches delivery note (" + (l?.pieces || 0) + ")", "Straps and bearers checked", "Lot labels match " + (l?.lotIds.join(", ") || "load")];
+  const safe = SAFETY.every(c => checks[c]);
+  const events = l ? s.events.filter(e => e.ref.kind === "load" && e.ref.id === l.id).slice(0, 6) : [];
   const inv = l ? byId(s.invoices, l.invoiceId) : undefined;
+  const today = nowStamp(s).slice(0, 10);
+  const groups: [string, Load[]][] = [["Overdue proof", active.filter(x => x.collect.slice(0, 10) < today)], ["Today", active.filter(x => x.collect.startsWith(today))], ["Coming up", active.filter(x => x.collect.slice(0, 10) > today)]];
+  const sim = (text: string) => om.toast(text + " (simulated in the demo)");
+  const phase = PHASES.reduce((m, p, i) => (step >= p[1] ? i : m), 0);
 
   const phone = (
     <div className="om-phone" aria-label="Carrier app preview">
@@ -294,17 +406,22 @@ function CarrierApp({ om }: { om: Om }) {
         <div className="om-ph-top"><span>{nowStamp(s).slice(11)}</span><span>Oranmore Carrier · demo</span></div>
         {screen === "list" || !l ? (
           <>
-            <div className="om-ph-bar"><b>My loads</b><span className="om-faint om-small" style={{ marginLeft: "auto" }}>{active.length}</span></div>
+            <div className="om-ph-bar"><b>My loads</b><span className="om-faint om-small" style={{ marginLeft: "auto" }}>{active.length} open</span></div>
             <div className="om-ph-body">
-              {active.map(x => (
-                <button key={x.id} className="om-ph-item" onClick={() => pick(x.id)}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="om-mono om-small om-ink">{x.id}</div>
-                    <div className="om-small" style={{ marginTop: 3 }}>{x.plant} → {site(om, x)?.town}</div>
-                    <div className="om-tiny om-faint" style={{ marginTop: 2 }}>{stamp(x.collect)} · {carrierShort(om, x)}</div>
-                  </div>
-                  <Badge>{x.status}</Badge>
-                </button>
+              {groups.filter(g => g[1].length).map(([g, xs]) => (
+                <div key={g} className="om-col" style={{ gap: 8 }}>
+                  <div className="om-label" style={{ margin: "4px 2px 0" }}>{g}</div>
+                  {xs.map(x => (
+                    <button key={x.id} className="om-ph-item" onClick={() => pick(x.id)}>
+                      <div className="om-ph-time"><b>{timeOf(x.collect)}</b><span>{dateShort(x.collect)}</span></div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="om-small om-ink" style={{ fontWeight: 600 }}>{x.plant} → {site(om, x)?.town}</div>
+                        <div className="om-tiny om-faint" style={{ marginTop: 2 }}>{x.id} · {x.pieces} pcs · {num(x.tonnes)} t</div>
+                      </div>
+                      <Badge>{x.status}</Badge>
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           </>
@@ -312,39 +429,69 @@ function CarrierApp({ om }: { om: Om }) {
           <>
             <div className="om-ph-bar"><button className="om-link" onClick={() => setScreen("list")} aria-label="Back to my loads">‹ Loads</button><b style={{ marginLeft: 6 }}>{l.id}</b><span style={{ marginLeft: "auto" }}><Badge>{l.status}</Badge></span></div>
             <div className="om-ph-body">
-              <div className="om-ph-steps">{CARRIER_STEPS.map((c, i) => <span key={c} className={i <= step ? "on" : ""} title={c} />)}</div>
-              <div className="om-small"><b className="om-ink">{CARRIER_STEPS[Math.min(step, 6)]}</b><div className="om-muted" style={{ marginTop: 3 }}>{l.plant} → {d?.name}, {d?.town}</div><div className="om-faint om-tiny" style={{ marginTop: 2 }}>Deliver {l.deliver} · {l.siteContact}</div></div>
+              <div className="om-ph-phases">{PHASES.map(([p], i) => <div key={p} className={i < phase || step >= 6 ? "done" : i === phase ? "on" : ""}><i /><span>{p}</span></div>)}</div>
+              <div className="om-ph-route">
+                <div><span className="om-faint om-tiny">COLLECT</span><b>{l.plant}</b><span className="om-tiny">{stamp(l.collect)}</span></div>
+                <div className="arrow" aria-hidden="true">→</div>
+                <div><span className="om-faint om-tiny">DELIVER</span><b>{d?.town}</b><span className="om-tiny">{l.deliver.split(" ").slice(1).join(" ")}</span></div>
+              </div>
+              <div className="om-row" style={{ gap: 6 }}>
+                <button className="om-ph-btn ghost sm" onClick={() => sim("Directions to " + (d?.name || "site") + " opened")}>Directions</button>
+                <button className="om-ph-btn ghost sm" onClick={() => sim("Calling " + l.siteContact.replace(" (demo contact)", ""))}>Call site</button>
+                <button className="om-ph-btn ghost sm" onClick={() => setInfo(!info)}>{info ? "Hide" : "Site rules"}</button>
+              </div>
+              {info && (
+                <div className="om-ph-info">
+                  {cf("access") && <div><span>Access</span>{cf("access")}</div>}
+                  {cf("delivery") && <div><span>Delivery</span>{cf("delivery")}</div>}
+                  {cf("lifting") && <div><span>Lifting</span>{cf("lifting")}</div>}
+                  <div><span>Contact</span>{l.siteContact}</div>
+                </div>
+              )}
+              <div className="om-ph-info">{lots.map(x => <div key={x.id}><span>{x.id}</span>{x.product} · {x.units} units{x.m2 ? " · " + num(x.m2) + " m²" : ""}</div>)}{!lots.length && <div><span>Load</span>{l.pieces} pieces</div>}</div>
+              <div className="om-small"><b className="om-ink">Next: {CARRIER_STEPS[Math.min(step, 6)]}</b></div>
               {step === 0 && (
                 <>
                   {COLLECT.map(c => <label key={c} className="om-ph-item" style={{ cursor: "pointer" }}><input type="checkbox" checked={!!checks[c]} onChange={e => setChecks({ ...checks, [c]: e.target.checked })} /><span className="om-small">{c}</span></label>)}
-                  <button className="om-ph-btn" disabled={!COLLECT.every(c => checks[c])} onClick={() => om.do.carrierAdvance(l.id)}>Confirm collection</button>
+                  <div className="om-label" style={{ margin: 0 }}>Loading photo before departure (simulated){checks["photo:load"] && " ✓"}</div>
+                  <div className="om-photo">{["load_strapped.jpg", "load_labels.jpg", "trailer_side.jpg"].map(p => <button key={p} className={checks["photo:" + p] ? "on" : ""} onClick={() => setChecks({ ...checks, ["photo:load"]: true, ["photo:" + p]: true })}>{p.replace(".jpg", "").replace(/_/g, " ")}</button>)}</div>
+                  <button className="om-ph-btn" disabled={!COLLECT.every(c => checks[c]) || !checks["photo:load"]} onClick={() => { om.do.carrierAdvance(l.id); setChecks({}); }}>{!checks["photo:load"] && COLLECT.every(c => checks[c]) ? "Add a loading photo" : "Confirm collection"}</button>
                 </>
               )}
               {step === 1 && <button className="om-ph-btn" onClick={() => om.do.carrierAdvance(l.id)}>Depart for site</button>}
-              {step === 2 && <><div className="om-small om-muted">En route. Location sharing is not used in this demo.</div><button className="om-ph-btn" onClick={() => om.do.carrierAdvance(l.id)}>Arrived at site</button></>}
-              {step >= 3 && step < 6 && l.status !== "Exception" && (
+              {step === 2 && <><div className="om-small om-muted">En route to {d?.name}. Location sharing is not used in this demo.</div><button className="om-ph-btn" onClick={() => om.do.carrierAdvance(l.id)}>Arrived at site</button></>}
+              {step >= 3 && step < 6 && l.status !== "Exception" && !safe && (
+                <>
+                  <div className="om-label" style={{ margin: 0 }}>Before unloading</div>
+                  {SAFETY.map(c => <label key={c} className="om-ph-item" style={{ cursor: "pointer" }}><input type="checkbox" checked={!!checks[c]} onChange={e => setChecks({ ...checks, [c]: e.target.checked })} /><span className="om-small">{c}</span></label>)}
+                  <div className="om-tiny om-faint">Proof capture opens once all three are ticked.</div>
+                </>
+              )}
+              {step >= 3 && step < 6 && l.status !== "Exception" && safe && (
                 <>
                   {l.claimed && <div className="om-tiny om-faint">Arrival claimed {stamp(l.claimed)}. Proof still needed.</div>}
-                  <div className="om-label" style={{ margin: 0 }}>1. Unloading photo (simulated)</div>
-                  <div className="om-photo">{EXAMPLE_PHOTOS.map(p => <button key={p} className={l.pod.photoName === p ? "on" : ""} onClick={() => om.do.carrierSetPod(l.id, { photo: true, photoName: p })}>{p.replace(".jpg", "")}</button>)}</div>
-                  <div className="om-label" style={{ margin: 0 }}>2. Recipient name</div>
+                  <div className="om-label" style={{ margin: 0 }}>1. Unloading photo (simulated){l.pod.photo && " ✓"}</div>
+                  <div className="om-photo">{EXAMPLE_PHOTOS.map(p => <button key={p} className={l.pod.photoName === p ? "on" : ""} onClick={() => om.do.carrierSetPod(l.id, { photo: true, photoName: p })}>{p.replace(".jpg", "").replace(/_/g, " ")}</button>)}</div>
+                  <div className="om-label" style={{ margin: 0 }}>2. Recipient name{l.pod.receiver && " ✓"}</div>
                   <div className="om-row"><input className="om-input" value={receiver || l.pod.receiver || ""} onChange={e => setReceiver(e.target.value)} placeholder="Name of person receiving" /><Btn sm disabled={!(receiver || "").trim()} onClick={() => om.do.carrierSetPod(l.id, { receiver: receiver.trim() })}>Save</Btn></div>
                   <div className="om-label" style={{ margin: 0 }}>3. Recipient signature</div>
                   <SignaturePad key={l.id} done={l.pod.signature} onDone={() => om.do.carrierSetPod(l.id, { signature: true })} />
-                  <button className="om-ph-btn" disabled={!l.pod.photo || !l.pod.receiver || !l.pod.signature} onClick={() => { om.do.carrierSubmit(l.id); om.toast(l.id + ": POD submitted, review pending. Not verified until the office accepts it."); }}>Submit delivery</button>
+                  <button className="om-ph-btn" disabled={!l.pod.photo || !l.pod.receiver || !l.pod.signature} onClick={() => { om.do.carrierSubmit(l.id); om.toast(l.id + ": POD submitted, review pending. Not verified until the office accepts it."); }}>{!l.pod.photo || !l.pod.receiver || !l.pod.signature ? [!l.pod.photo && "photo", !l.pod.receiver && "name", !l.pod.signature && "signature"].filter(Boolean).join(", ") + " still needed" : "Submit delivery"}</button>
                 </>
               )}
               {step < 6 && l.status !== "Exception" && (showExc ? (
                 <>
-                  <textarea className="om-input" rows={3} value={exc} onChange={e => setExc(e.target.value)} placeholder="What went wrong? For example: crane not on site, unit damaged" />
+                  <div className="om-row" style={{ gap: 6, flexWrap: "wrap" }}>{["Crane not on site", "Unit damaged", "Site closed", "Short on pieces"].map(q => <button key={q} className="om-chip" style={{ cursor: "pointer" }} onClick={() => setExc(q)}>{q}</button>)}</div>
+                  <textarea className="om-input" rows={3} value={exc} onChange={e => setExc(e.target.value)} placeholder="What went wrong?" />
                   <div className="om-row"><button className="om-ph-btn ghost" onClick={() => setShowExc(false)}>Cancel</button><button className="om-ph-btn warn" disabled={!exc.trim()} onClick={() => { om.do.carrierException(l.id, exc.trim()); setShowExc(false); om.toast(l.id + ": exception reported to the office."); }}>Send exception</button></div>
                 </>
-              ) : <button className="om-ph-btn ghost" onClick={() => setShowExc(true)}>Report exception</button>)}
+              ) : <button className="om-ph-btn ghost" onClick={() => setShowExc(true)}>Report a problem</button>)}
               {(step >= 6 || l.status === "Exception") && (
                 <div className="om-col">
                   <Badge tone={l.status === "POD verified" ? "ok" : l.status === "Exception" ? "bad" : "warn"}>{l.status === "POD submitted" ? "POD submitted, review pending" : l.status === "POD verified" ? "Accepted by office" : "Exception reported"}</Badge>
                   {l.exception && <div className="om-small" style={{ color: "var(--bad)" }}>{l.exception}</div>}
                   <div className="om-small om-muted">Timestamps and location are demo data, not verified telematics. Office review required.</div>
+                  {active.find(x => x.id !== l.id && x.status === "Planned") && <button className="om-ph-btn" onClick={() => pick(active.find(x => x.id !== l.id && x.status === "Planned")!.id)}>Next job: {active.find(x => x.id !== l.id && x.status === "Planned")!.id}</button>}
                   <button className="om-ph-btn ghost" onClick={() => setScreen("list")}>Back to my loads</button>
                 </div>
               )}
@@ -359,19 +506,22 @@ function CarrierApp({ om }: { om: Om }) {
     <div className="om-carrier-wrap">
       <div>{phone}</div>
       <Grid>
-        <div className="om-s-12"><Banner>Carrier-facing preview. No sign-in, GPS or server: everything updates the shared demo state, so the office view on the right moves as the driver taps.</Banner></div>
-        <Card span={12} title="Load in the app" right={<select className="om-input" style={{ width: 220 }} value={sel} onChange={e => pick(e.target.value)} aria-label="Load">{active.concat(s.loads.filter(x => x.status === "POD verified")).map(x => <option key={x.id} value={x.id}>{x.id} · {x.status}</option>)}</select>}>
+        <div className="om-s-12"><Banner>Carrier-facing preview. No sign-in, GPS or server: every tap updates the shared demo state, so the office view on the right moves as the driver works.</Banner></div>
+        <Card span={12} title="Office view of this load" right={<select className="om-input" style={{ width: 240 }} value={sel} onChange={e => pick(e.target.value)} aria-label="Load">{active.concat(s.loads.filter(x => x.status === "POD verified")).map(x => <option key={x.id} value={x.id}>{x.id} · {x.status}</option>)}</select>}>
           {l ? (
             <>
-              <div className="om-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 12 }}><b>{project(om, l)}</b><Badge>{l.status}</Badge></div>
-              <Evidence l={l} />
-              <div className="om-kpis" style={{ marginTop: 12 }}>
-                <Kpi label="Carrier claim" value={l.claimed ? stamp(l.claimed) : "—"} />
-                <Kpi label="POD submitted" value={l.pod.submitted ? stamp(l.pod.submitted) : "—"} tone={l.pod.submitted ? "warn" : undefined} />
-                <Kpi label="Invoice" value={inv ? gbp(inv.net) : "—"} sub={inv ? inv.stage : ""} tone={inv?.stage === "Held" ? "bad" : undefined} />
+              <div className="om-row" style={{ flexWrap: "wrap", gap: 8, marginBottom: 14 }}><b>{project(om, l)}</b><Badge>{l.status}</Badge><span className="om-faint om-small">{carrierShort(om, l)} · {l.driver.replace(" (mock)", "")}</span></div>
+              <div className="om-track">
+                {CARRIER_STEPS.map((c, i) => <div key={c} className={i < step ? "done" : i === step && step < 6 ? "on" : ""}><i /><span>{c}</span></div>)}
               </div>
-              <div className="om-eyebrow" style={{ margin: "14px 0 8px" }}>Office activity on this load</div>
-              {events.length ? events.map(e => <div key={e.id} className="om-small" style={{ padding: "5px 0", borderTop: "1px solid var(--border)" }}><span className="om-mono om-faint">{stamp(e.at)}</span> · <b style={{ fontWeight: 600 }}>{e.title}</b> <span className="om-muted">· {e.actor}</span></div>) : <div className="om-faint om-small">No events yet.</div>}
+              <div style={{ marginTop: 14 }}><Evidence l={l} /></div>
+              <div className="om-kpis" style={{ marginTop: 12 }}>
+                <Kpi label="Carrier claim" value={l.claimed ? stamp(l.claimed) : "·"} />
+                <Kpi label="POD submitted" value={l.pod.submitted ? stamp(l.pod.submitted) : "·"} tone={l.pod.submitted ? "warn" : undefined} />
+                <Kpi label="Invoice" value={inv ? gbp(inv.net) : "·"} sub={inv ? inv.stage : "no draft linked"} tone={inv?.stage === "Held" ? "bad" : undefined} />
+              </div>
+              <div className="om-label" style={{ margin: "16px 0 8px" }}>Office activity on this load</div>
+              {events.length ? events.map(e => <div key={e.id} className="om-small" style={{ padding: "6px 0", borderTop: "1px solid var(--border)" }}><span className="om-mono om-faint">{stamp(e.at)}</span> · <b style={{ fontWeight: 600 }}>{e.title}</b> <span className="om-muted">· {e.actor}</span></div>) : <div className="om-faint om-small">No events yet. Tap through the app to see them land here.</div>}
               <div className="om-row" style={{ marginTop: 14, flexWrap: "wrap" }}>
                 {loadAwaitingProof(l) && <Btn kind="primary" onClick={() => { om.setUi("sel:Logistics:pod", l.id); om.setSub("pod"); }}>Review in Exceptions & POD</Btn>}
                 <Btn onClick={() => om.open({ kind: "load", id: l.id })}>Open record</Btn>

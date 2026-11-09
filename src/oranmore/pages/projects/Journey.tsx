@@ -18,7 +18,7 @@ export default function Journey({ om }: { om: Om }) {
       <Head eyebrow="One customer · one project · one journey" title={d?.name + " · " + acc?.name}
         sub={"From enquiry to Sage invoice on one line. Each stage is owned by a team and points to the record that proves it. " + o.id + " · " + gbp(o.value) + " net · awarded " + dateUK(o.awarded) + "."} />
       <Grid>
-        <div className="om-s-3 om-col" style={{ gap: 8 }}>
+        <div className="om-s-3 om-col om-sticky" style={{ gap: 8 }}>
           <div className="om-eyebrow" style={{ padding: "0 2px" }}>Projects</div>
           {s.orders.map(x => {
             const px = progressOf(om, x);

@@ -2,7 +2,7 @@ import type { Om } from "../../ui";
 import { Head, Grid, Card, Table, Badge, Btn, RefLink, toneOf } from "../../ui";
 import { account, dev, orderForQuote, blockingOpen, byId } from "../../selectors";
 import { gbp, dateShort, dateUK } from "../../format";
-import { useOrder } from "./common";
+import { useOrder, OrderNumbers } from "./common";
 
 const PHASE = (design: string, prod: string, dispatch: string) =>
   dispatch === "Complete" ? "Complete" : dispatch === "Delivering" ? "Delivering" : prod !== "Not released" ? "In production" : design !== "Awaiting information" ? "Design" : "Contract setup";
@@ -67,8 +67,9 @@ export default function Awards({ om }: { om: Om }) {
           ]} />
         </Card>
 
-        <Card span={5} title={o.id + " · " + (dev(s, o.devId)?.name || "")} sub={"Created from " + o.quoteId + " on " + dateUK(o.awarded)}>
-          <div className="om-eyebrow" style={{ marginBottom: 8 }}>Inherited on award</div>
+        <Card span={5} className="om-sticky" title={o.id + " · " + (dev(s, o.devId)?.name || "")} sub={"Created from " + o.quoteId + " on " + dateUK(o.awarded)}>
+          <OrderNumbers om={om} o={o} />
+          <div className="om-eyebrow" style={{ margin: "14px 0 8px" }}>Inherited on award</div>
           <div className="om-kv" style={{ gridTemplateColumns: "130px 1fr" }}>
             <dt>Customer</dt><dd>{account(s, o.accountId)?.name} <span className="om-chip" style={{ height: 20 }}>from account</span></dd>
             <dt>Site</dt><dd>{dev(s, o.devId)?.name} <span className="om-chip" style={{ height: 20 }}>from {q?.enquiryId}</span></dd>

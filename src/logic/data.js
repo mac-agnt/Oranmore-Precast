@@ -417,7 +417,6 @@ const NAV = [
   {label:"Plants & Planning", icon:"navPlants", page:"Plants & Planning"},
   {label:"Logistics", icon:"navLogistics", page:"Logistics"},
   {label:"Finance", icon:"navFinance", page:"Finance"},
-  {label:"Work", icon:"navWork", page:"Work"},
   {label:"Records", icon:"navRecords", page:"Records"},
   {label:"Activity", icon:"pulseLine", page:"Activity", dot:true}
 ];
@@ -579,6 +578,16 @@ const AGENT_DEFS = [
      {kind:"agent", text:"w/c 09 Nov: Brandon 4,800 of 6,000 m\u00b2 (80%), Lound 2,900 of 4,000 m\u00b2 (72.5%). Kier Westbridge's 2,400 m\u00b2 is already inside Lound's figure."},
      {kind:"agent", text:"if Harlow & Pike award Cambridge (1,500 m\u00b2) and it lands at Lound that week, Lound goes 400 m\u00b2 over. that's a scenario, not a booking: iThesis and the planners decide."}
    ]},
+  {id:"constraints", name:"Constraint Analyst", shape:"tall-unit", tint:"#2a1f16", state:"attention", role:"Finds the one step that limits throughput from enquiry to cash, explains it and flags it to the owner",
+   when:"08:30", preview:"estimating is the binding constraint this week.",
+   thread:[
+     {kind:"stamp", text:"Today 08:30"},
+     {kind:"routine", text:"Ran routine", routine:"Constraint analysis"},
+     {kind:"agent", text:"binding constraint this week: estimating. Sam Patel is carrying 43 drawing packages against a working limit of 30, with quotes due inside seven days."},
+     {kind:"agent", text:"next tightest: design release (Mace RFI-1032 and RFI-1034 hold \u00a32.85m of awarded work) and QA sign-off before Tuesday and Wednesday collections. plant is not the constraint: Brandon peaks at 80%, Lound at 75%."},
+     {kind:"user", text:"so adding plant capacity wouldn't help?"},
+     {kind:"agent", text:"not this month. more beds would sit idle behind design and estimating. i've flagged the estimating load to the estimating lead. i don't move work between people: that's their call."}
+   ]},
   {id:"dispatch", name:"Dispatch & POD", shape:"low-dome", tint:"#241b2e", state:"working", role:"Chases carriers for proof, compares claimed and verified deliveries, routes disputes to people",
    when:"08:20", preview:"requested POD for LOAD-4481.",
    thread:[
@@ -597,7 +606,7 @@ const AGENT_DEFS = [
 const KPI_DEFS = {};
 
 /* Dashboard tabs. Numbers come from src/oranmore/kpiBand.ts and the Oranmore pages. */
-const ASPECT_DEFS = [["executive","Executive"],["commercial","Commercial"],["plant","Plant"],["logistics","Logistics"],["finance","Finance"]].map(a => ({
+const ASPECT_DEFS = [["executive","Executive"],["commercial","Commercial"],["plant","Plant"],["logistics","Fleet & Logistics"],["finance","Finance"]].map(a => ({
   id:a[0], label:a[1], color:"var(--accent)", owner:"ORANMORE", description:"", kind:"columns",
   chartTitle:"", chartUnit:"", chart:[["Oct",1,""],["Nov",1,""]], splitTitle:"", split:[], tableCols:["","","",""], table:[], metrics:[]
 }));
@@ -628,6 +637,13 @@ const OPS_DEFS = [
    saved:"12 hours a month",
    steps:[["Trigger","An email lands in the commercial inbox"],["Find","Match customer and development"],["Draft","Create the draft enquiry"],["Approval","A person confirms low-confidence fields","gate"],["Update","Save the enquiry and assign an estimator task"]],
    runs:[["Today 08:52","6s","partial","1 draft","£0.01","2 fields need confirmation"],["Fri 14:10","7s","ok","1 enquiry","£0.01"],["Thu 11:02","6s","ok","1 enquiry","£0.01"]]},
+  {id:"o11", name:"Constraint analysis", kind:"routine", owner:"Constraint Analyst", ownerKind:"agent", initials:"CA",
+   trigger:"Weekdays, 08:30 and on every plan change", triggerKind:"schedule", next:"Tomorrow", last:"Estimating flagged as binding", status:"healthy", rate:100, on:true,
+   what:"Measures the load on every step from estimating to cash, names the binding constraint and flags it to the owner with a suggested action.",
+   why:"Each team optimised its own step, so effort went into steps that were not holding the business back.",
+   saved:"6 hours a month",
+   steps:[["Trigger","Weekdays at 08:30, and whenever the plan changes"],["Find","Load on estimating, design, plant, QA, haulage and cash"],["Check","Rank by load, then by value at stake"],["Draft","Explain the binding constraint and the knock-on"],["Approval","Owner decides what to change","gate"],["Update","Task to the owner, entry in Activity"]],
+   runs:[["Today 08:30","3s","ok","1 binding, 2 tight","\u00a30.01"],["Fri 08:30","3s","ok","1 binding, 3 tight","\u00a30.01"],["Thu 08:30","3s","ok","1 binding, 2 tight","\u00a30.01"]]},
   {id:"o4", name:"Transport planner import", kind:"automation", owner:"Ops Watchdog", ownerKind:"agent", initials:"OW",
    trigger:"Daily, 06:00", triggerKind:"schedule", next:"Tomorrow", last:"1 conflict parked", status:"failed", rate:88, on:true,
    what:"Maps the Excel transport planner rows onto loads, carriers and lots, and parks conflicts for review instead of merging them.",

@@ -174,3 +174,35 @@ export function Modal({ title, sub, onClose, children, footer, width }: { title:
 }
 /** Small coloured dot for timeline/state markers. */
 export const Dot = ({ tone }: { tone: Tone }) => <span className="om-dot" style={{ background: tone === "ok" ? "var(--ok)" : tone === "bad" ? "var(--bad)" : tone === "warn" ? "var(--warn)" : tone === "accent" ? "var(--accent)" : tone === "info" ? "#8cbcec" : "var(--faint)" }} />;
+
+/* ── drill-through metric tiles (Dashboard and module headers) ─────────── */
+export interface Drill { page: string; tab: string; ui?: Record<string, unknown> }
+/** Navigate to a module tab after setting its filters/selection. Sets UI keys first so go() never clobbers them. */
+export function drill(om: Om, d: Drill) {
+  Object.entries(d.ui || {}).forEach(([k, v]) => om.setUi(k, v));
+  om.go(d.page, d.tab);
+}
+export interface MetricDef { label: string; value: ReactNode; sub?: ReactNode; tone?: Tone; to?: Drill; hint?: string }
+export function MetricTile({ om, m }: { om: Om; m: MetricDef }) {
+  const color = m.tone === "bad" ? "var(--bad)" : m.tone === "warn" ? "var(--warn)" : m.tone === "ok" ? "var(--ok)" : m.tone === "accent" ? "var(--accent)" : undefined;
+  const inner = (
+    <>
+      <span className="mt-k">{m.label}</span>
+      <span className="mt-v" style={{ color }}>{m.value}</span>
+      {m.sub && <span className="mt-s">{m.sub}</span>}
+      {m.to && <span className="mt-go" aria-hidden="true">{m.hint || "Open"} <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg></span>}
+    </>
+  );
+  return m.to
+    ? <button className={"om-mtile" + (m.tone ? " t-" + m.tone : "")} onClick={() => drill(om, m.to!)} aria-label={m.label + ": open " + m.to.page + " " + m.to.tab}>{inner}</button>
+    : <div className="om-mtile">{inner}</div>;
+}
+export function MetricGroup({ om, title, items, note }: { om: Om; title?: ReactNode; items: MetricDef[]; note?: ReactNode }) {
+  return (
+    <section className="om-mgroup">
+      {(title || note) && <div className="om-mgroup-h">{title && <h3>{title}</h3>}{note && <span className="om-faint om-tiny">{note}</span>}</div>}
+      <div className="om-mtiles">{items.map(m => <MetricTile key={String(m.label)} om={om} m={m} />)}</div>
+    </section>
+  );
+}
+

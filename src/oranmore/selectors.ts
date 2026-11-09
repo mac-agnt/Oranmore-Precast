@@ -1,7 +1,7 @@
 /* Every count, total and status the UI shows is derived here from the one
    shared state. No KPI is typed in by hand, so no two screens can disagree. */
 import type { OmState, Order, Quote, Enquiry, Ref, Load, Invoice, Commitment, QuoteStatus } from "./types";
-import { HOLLOWCORE_CAPACITY, SNAPSHOT_DAY, WEEK } from "./fixtures";
+import { HOLLOWCORE_CAPACITY, SNAPSHOT_DAY, WEEK, WEEKS, OTHER_LINES, STEP_CAPACITY, YARD_BAYS } from "./fixtures";
 import { addDays, daysBetween, gbp, gbpShort, hoursSince, dateShort, stamp } from "./format";
 
 export const TODAY = SNAPSHOT_DAY;
@@ -310,6 +310,157 @@ export function approvals(s: OmState): ApprovalItem[] {
   s.invoices.filter(i => i.stage === "Eligible").forEach(i => out.push({ id: "ap-ie-" + i.id, kind: "Invoice", title: "Release to invoice queue: " + i.id, ref: { kind: "invoice", id: i.id }, dept: "Finance", value: i.net, detail: "POD verified. Hold can be lifted.", action: "Release to queue", gate: "Finance control" }));
   s.invoices.filter(i => i.stage === "Ready for finance review").forEach(i => out.push({ id: "ap-i-" + i.id, kind: "Invoice", title: "Finance review: " + i.id, ref: { kind: "invoice", id: i.id }, dept: "Finance", value: i.net, detail: i.description, action: "Approve for Sage handoff", gate: "Finance lead approval" }));
   return out;
+}
+
+/* ── constraint analysis (Constraint Analyst agent) ────────────────────────
+   Theory of constraints across the whole journey: every step gets a load
+   (demand / illustrative capacity). The step with the highest load is the
+   binding constraint; improving anything else does not raise throughput. */
+export type ConstraintArea = "Commercial" | "Design" | "Plant" | "Quality" | "Logistics" | "Finance";
+export interface Constraint {
+  id: string; area: ConstraintArea; step: string; title: string; load: number; metric: string; basis: string;
+  impact: string; impactValue: number; downstream: string; action: string; owner: string; ref: Ref;
+  go: [string, string, string?]; tone: "bad" | "warn" | "ok"; score: number;
+}
+const toneFor = (load: number): Constraint["tone"] => (load >= 1 ? "bad" : load >= 0.85 ? "warn" : "ok");
+export const CONSTRAINT_FLOW: ConstraintArea[] = ["Commercial", "Design", "Plant", "Quality", "Logistics", "Finance"];
+
+export function constraints(s: OmState): Constraint[] {
+  const out: Omit<Constraint, "tone" | "score">[] = [];
+  const rows = enquiryRows(s);
+
+  // Commercial: estimator bench
+  const est = estimatorLoad(s).filter(e => e.name !== "Unassigned");
+  const busiest = est.slice().sort((a, b) => b.drawings - a.drawings)[0];
+  const unassigned = rows.filter(r => PRE_SUBMIT.includes(r.q.status) && !r.e.estimator);
+  if (busiest) {
+    const due7 = busiest.rows.filter(r => r.dueIn <= 7);
+    out.push({ id: "k-est", area: "Commercial", step: "Estimating", title: busiest.name + " carries " + busiest.drawings + " drawing packages",
+      load: busiest.drawings / STEP_CAPACITY.estimatorDrawings, metric: busiest.drawings + " / " + STEP_CAPACITY.estimatorDrawings + " packages",
+      basis: "Busiest estimator's open drawing packages against " + STEP_CAPACITY.estimatorDrawings + " per person (illustrative)",
+      impact: due7.length + " quotes due within 7 days, " + gbpShort(due7.reduce((t, r) => t + r.q.value, 0)) + " indicative", impactValue: due7.reduce((t, r) => t + r.q.value, 0),
+      downstream: (unassigned.length ? unassigned.length + " enquiries still unassigned. " : "") + "Late quotes push award dates and leave plant slots tentative.",
+      action: "Rebalance " + (busiest.rows.find(r => r.dueIn > 3)?.e.id || "the next due enquiry") + " to the least loaded estimator, or ask for a deadline extension.",
+      owner: "Estimating lead", ref: { kind: "quote", id: busiest.rows[0]?.q.id || "" }, go: ["Commercial", "workload"] });
+  }
+
+  // Design: packages not released and RFIs blocking them
+  const pending = s.designs.filter(d => !d.released);
+  const blockedOrders = s.orders.filter(o => blockingOpen(s, o.id).length > 0);
+  const waitingValue = s.orders.filter(o => pending.some(d => d.orderId === o.id) || blockedOrders.includes(o)).reduce((t, o) => t + o.value, 0);
+  const rfiCount = s.orders.reduce((t, o) => t + blockingOpen(s, o.id).length, 0);
+  const firstBlocked = blockedOrders[0] || s.orders.find(o => pending.some(d => d.orderId === o.id));
+  out.push({ id: "k-design", area: "Design", step: "Design release", title: pending.length + " design packages waiting to release" + (rfiCount ? ", " + rfiCount + " blocking RFIs" : ""),
+    load: (pending.length + rfiCount * 0.5) / STEP_CAPACITY.designPackages, metric: pending.length + " packages · " + rfiCount + " RFIs",
+    basis: "Unreleased packages plus half a slot per blocking RFI, against " + STEP_CAPACITY.designPackages + " packages in parallel (illustrative)",
+    impact: gbpShort(waitingValue) + " of awarded work cannot be cast", impactValue: waitingValue,
+    downstream: "Tentative plant slots cannot firm up, so capacity looks free that is already spoken for.",
+    action: blockedOrders.length ? "Chase " + blockingOpen(s, blockedOrders[0].id).map(r => r.id).join(" and ") + " with " + (account(s, blockedOrders[0].accountId)?.name || "the customer") + " today." : "Get client approval on " + (pending[0]?.id || "the next package") + ".",
+    owner: "Design coordinator", ref: firstBlocked ? { kind: "order", id: firstBlocked.id } : { kind: "design", id: pending[0]?.id || "" }, go: blockedOrders.length ? ["Projects", "rfis", blockedOrders[0].id] : ["Plants & Planning", "design", pending[0]?.id] });
+
+  // Plant: peak hollowcore week per plant (firm + tentative)
+  (["Brandon", "Lound"] as const).forEach((p, i) => {
+    const wk = WEEKS.map(w => capacityWeek(s, w)).map(w => ({ week: w.week, ...w.plants[i] }));
+    const peak = wk.reduce((m, w) => ((w.firm + w.tentative) / w.cap > (m.firm + m.tentative) / m.cap ? w : m), wk[0]);
+    const ld = (peak.firm + peak.tentative) / peak.cap;
+    const over = Math.max(0, peak.firm + peak.tentative - peak.cap);
+    out.push({ id: "k-hc-" + p, area: "Plant", step: p + " hollowcore", title: p + " peaks at " + Math.round(ld * 100) + "% w/c " + dateShort(peak.week),
+      load: ld, metric: (peak.firm + peak.tentative).toLocaleString("en-GB") + " / " + peak.cap.toLocaleString("en-GB") + " m²",
+      basis: "Firm plus tentative hollowcore in the busiest of the next six weeks",
+      impact: over ? over.toLocaleString("en-GB") + " m² would not fit if tentative work firms up" : (peak.cap - peak.firm - peak.tentative).toLocaleString("en-GB") + " m² headroom at peak",
+      impactValue: over * 90, downstream: over ? "Casting slips a week and every load behind it moves." : "Free beds can absorb a new award.",
+      action: over ? "Move tentative work to " + (p === "Brandon" ? "Lound" : "Brandon") + " or a later week before it firms up." : "No action. Keep watching tentative demand.",
+      owner: p + " production planner", ref: peak.firmItems[0]?.ref || { kind: "order", id: s.orders[0].id }, go: ["Plants & Planning", "capacity"] });
+  });
+  const line = OTHER_LINES.slice().sort((a, b) => b.committed / b.capacity - a.committed / a.capacity)[0];
+  out.push({ id: "k-line", area: "Plant", step: line.product, title: line.product + " line at " + Math.round((line.committed / line.capacity) * 100) + "% (" + line.plant + ")",
+    load: line.committed / line.capacity, metric: line.committed + " / " + line.capacity + " " + line.unit, basis: "Tightest non-hollowcore line, on its own unit basis",
+    impact: (line.capacity - line.committed) + " " + line.unit.split(" / ")[0] + " free this week", impactValue: 0,
+    downstream: "Orders that mix products wait for the slowest line.", action: "Check the next " + line.product.toLowerCase() + " orders before promising dates.",
+    owner: line.plant + " production planner", ref: { kind: "order", id: s.orders.find(o => o.products.includes(line.product))?.id || s.orders[0].id }, go: ["Plants & Planning", "capacity"] });
+
+  // Quality: inspections needed before collections in the next 48 h
+  const now = nowStamp(s);
+  const soon = s.loads.filter(l => ["Planned", "Loaded"].includes(l.status) && hoursSince(now, l.collect) <= 48);
+  const needQa = s.lots.filter(l => (l.qa === "Inspection pending" || l.qa === "On hold" || (l.qa === "Not started" && l.status !== "Not released")) && soon.some(x => x.lotIds.includes(l.id)));
+  const qaValue = needQa.reduce((t, l) => t + (byId(s.invoices, s.loads.find(x => x.lotIds.includes(l.id))?.invoiceId)?.net || 0), 0);
+  out.push({ id: "k-qa", area: "Quality", step: "QA sign-off", title: needQa.length + " lots need sign-off before collection in 48 h",
+    load: needQa.length / STEP_CAPACITY.qaInspections48h, metric: needQa.length + " / " + STEP_CAPACITY.qaInspections48h + " inspections",
+    basis: "Lots on loads collecting within 48 h that are not yet released, against " + STEP_CAPACITY.qaInspections48h + " inspections per 48 h (illustrative)",
+    impact: needQa.map(l => l.id).join(", ") || "Nothing waiting", impactValue: qaValue,
+    downstream: "A lot without sign-off cannot leave the yard, so the haulier slot is lost.",
+    action: needQa[0] ? "Book " + needQa[0].inspector + " on " + needQa[0].id + " first." : "No action.",
+    owner: "QA lead", ref: { kind: "lot", id: needQa[0]?.id || s.lots[0].id }, go: ["Plants & Planning", "quality", needQa[0]?.id] });
+
+  // Logistics: busiest collection day and unbooked drivers
+  const days = Array.from(new Set(s.loads.filter(l => l.collect.slice(0, 10) >= TODAY && (l.status === "Planned" || l.status === "Loaded")).map(l => l.collect.slice(0, 10)))).sort();
+  const perDay = days.map(d => ({ d, n: s.loads.filter(l => l.collect.startsWith(d) && ["Planned", "Loaded", "Dispatched"].includes(l.status)).length }));
+  const peakDay = perDay.reduce((m, x) => (x.n > m.n ? x : m), perDay[0] || { d: TODAY, n: 0 });
+  const tbc = s.loads.filter(l => l.status === "Planned" && /TBC/.test(l.driver)).sort((a, b) => a.collect.localeCompare(b.collect));
+  const tbcSoon = tbc.filter(l => hoursSince(now, l.collect) <= 72);
+  out.push({ id: "k-haul", area: "Logistics", step: "Haulage booking", title: peakDay.n + " collections on " + dateShort(peakDay.d) + ", " + tbc.length + " drivers not booked",
+    load: peakDay.n / STEP_CAPACITY.haulageSlotsPerDay + 0.08 * tbcSoon.length,
+    metric: peakDay.n + " / " + STEP_CAPACITY.haulageSlotsPerDay + " slots · " + tbcSoon.length + " TBC ≤72h", basis: "Peak day collections against " + STEP_CAPACITY.haulageSlotsPerDay + " outsourced slots per day, plus 8 points for each unbooked driver in the next 72 h",
+    impact: tbc.length + " loads at risk of premium rates or slipping", impactValue: tbc.length * 1400,
+    downstream: "A missed collection blocks the yard and delays the invoice behind it.",
+    action: tbc[0] ? "Confirm drivers for " + tbc.slice(0, 3).map(l => l.id).join(", ") + " with " + (byId(s.carriers, tbc[0].carrierId)?.name.replace(" (illustrative)", "") || "the carrier") + "." : "No action.",
+    owner: "Transport planner", ref: { kind: "load", id: tbc[0]?.id || s.loads[0].id }, go: ["Logistics", "planner"] });
+
+  // Finance: cash stuck behind the proof gate
+  const f = financeTotals(s);
+  const proofLoads = s.loads.filter(loadAwaitingProof);
+  out.push({ id: "k-cash", area: "Finance", step: "Proof to invoice", title: gbpShort(f.heldValue) + " held behind delivery proof",
+    load: f.heldValue ? f.heldValue / Math.max(1, f.readyValue + f.eligibleValue) : 0,
+    metric: gbpShort(f.heldValue) + " held / " + gbpShort(f.readyValue + f.eligibleValue) + " ready", basis: "Held value for every £1 that is ready or eligible to invoice",
+    impact: gbp(f.heldValue) + " cannot be invoiced", impactValue: f.heldValue,
+    downstream: "Every day held adds a day to debtor days on work already delivered.",
+    action: proofLoads[0] ? "Get evidence for " + proofLoads.map(l => l.id).join(", ") + "." : "Release eligible drafts.",
+    owner: "Transport planner + Finance lead", ref: { kind: "invoice", id: f.held[0]?.id || s.invoices[0].id }, go: proofLoads[0] ? ["Logistics", "pod", proofLoads[0].id] : ["Finance", "readiness"] });
+
+  return out.map(c => {
+    const load = Math.round(c.load * 100) / 100;
+    return { ...c, load, tone: toneFor(load), score: load + Math.min(0.3, c.impactValue / 5_000_000) };
+  }).sort((a, b) => b.score - a.score);
+}
+export const bindingConstraint = (s: OmState) => constraints(s)[0];
+
+/* ── carriers: performance from delivered loads, not mock figures ─────── */
+const windowEnd = (l: Load) => l.deliver.split(" ")[0] + " " + (l.deliver.split("-").slice(-1)[0] || "23:59");
+export function carrierStats(s: OmState, carrierId?: string) {
+  const ls = s.loads.filter(l => !carrierId || l.carrierId === carrierId);
+  const delivered = ls.filter(l => l.claimed);
+  const onTime = delivered.filter(l => l.claimed! <= windowEnd(l));
+  const verified = ls.filter(l => l.pod.verified && l.claimed);
+  const turn = verified.map(l => hoursSince(l.claimed!, l.pod.verified!));
+  return {
+    loads: ls.length, delivered: delivered.length, onTime: onTime.length, onTimePct: delivered.length ? onTime.length / delivered.length : 0,
+    late: delivered.filter(l => l.claimed! > windowEnd(l)), podHours: turn.length ? Math.round(turn.reduce((a, b) => a + b, 0) / turn.length) : 0,
+    tonnes: delivered.reduce((t, l) => t + l.tonnes, 0), open: ls.filter(l => l.status !== "POD verified").length,
+    noProof: ls.filter(l => l.status === "Arrival claimed").length, exceptions: ls.filter(l => l.status === "Exception").length,
+    tbc: ls.filter(l => l.status === "Planned" && /TBC/.test(l.driver)).length,
+  };
+}
+
+/* ── commercial turnaround and bid-status hygiene ──────────────────────── */
+export function turnaround(s: OmState) {
+  const sent = enquiryRows(s).filter(r => r.q.submitted);
+  const days = sent.map(r => daysBetween(r.e.received, r.q.submitted!));
+  const onTime = sent.filter(r => r.q.submitted! <= r.e.due);
+  const lastTouch = (r: EnquiryRow) => r.q.history.map(h => h.at.slice(0, 10)).concat([r.q.submitted || r.e.received]).sort().slice(-1)[0];
+  const stale = enquiryRows(s).filter(r => (r.q.status === "Quote submitted" || r.q.status === "Negotiation") && daysBetween(lastTouch(r), TODAY) > 14)
+    .map(r => ({ r, days: daysBetween(lastTouch(r), TODAY) })).sort((a, b) => b.days - a.days);
+  return { sent: sent.length, avgDays: days.length ? Math.round((days.reduce((a, b) => a + b, 0) / days.length) * 10) / 10 : 0,
+    onTime: onTime.length, onTimePct: sent.length ? onTime.length / sent.length : 0, stale };
+}
+
+/* ── yard & stock ──────────────────────────────────────────────────────── */
+export function yardStock(s: OmState) {
+  const inYard = s.lots.filter(l => l.status === "Complete" && /Yard/.test(l.yard));
+  const aged = inYard.map(l => ({ l, days: daysBetween(l.actual || l.planned, TODAY), load: s.loads.find(x => x.lotIds.includes(l.id)) }));
+  const bays = YARD_BAYS.map(b => { const here = aged.filter(x => x.l.yard === b.bay); const units = here.reduce((t, x) => t + x.l.units, 0); return { ...b, units, pct: units / b.capacity, lots: here }; });
+  return { aged: aged.sort((a, b) => b.days - a.days), bays, units: aged.reduce((t, x) => t + x.l.units, 0), m2: aged.reduce((t, x) => t + x.l.m2, 0),
+    avgDays: aged.length ? Math.round((aged.reduce((t, x) => t + x.days, 0) / aged.length) * 10) / 10 : 0,
+    noLoad: aged.filter(x => !x.load), blocked: aged.filter(x => x.l.qa !== "Released") };
 }
 
 export const money = { gbp, gbpShort };

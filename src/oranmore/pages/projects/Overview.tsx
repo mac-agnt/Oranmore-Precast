@@ -3,7 +3,7 @@ import { Head, Grid, Card, Table, Badge, Btn, Kpi, RefLink, Bar, toneOf, Lineage
 import type { Order } from "../../types";
 import { blockingOpen, designFor, invoicesFor, loadsFor } from "../../selectors";
 import { gbp, gbpShort, stamp, dateShort } from "../../format";
-import { useOrder, custName, siteName, progressOf, SourceBadge, stageTone, stageWord, stageTarget } from "./common";
+import { useOrder, custName, siteName, progressOf, SourceBadge, stageTone, stageWord, stageTarget, OrderNumbers } from "./common";
 
 export default function Overview({ om }: { om: Om }) {
   const [sel, setSel] = useOrder(om);
@@ -46,7 +46,8 @@ export default function Overview({ om }: { om: Om }) {
           ]} />
         </Card>
 
-        <Card span={4} title={siteName(om, sel)} sub={custName(om, sel) + " · " + sel.id} right={<LineageChip l={sel.lineage} />}>
+        <Card span={4} className="om-sticky" title={siteName(om, sel)} sub={custName(om, sel) + " · " + sel.id} right={<LineageChip l={sel.lineage} />}>
+          <OrderNumbers om={om} o={sel} />
           <div className="om-steps" style={{ marginBottom: 12 }}>
             {selP.st.map(x => <span key={x.key} title={x.label + ": " + x.status} style={{ flex: 1, height: 6, borderRadius: 999, background: x.state === "pending" ? "var(--track)" : `var(--${stageTone(x.state) === "accent" ? "accent" : stageTone(x.state) === "neutral" ? "track" : stageTone(x.state)})`, minWidth: 8 }} />)}
           </div>
@@ -63,6 +64,8 @@ export default function Overview({ om }: { om: Om }) {
             {selP.blocked[0] && stageTarget(selP.blocked[0]) && <Btn sm onClick={() => { const t = stageTarget(selP.blocked[0])!; om.go(t[0], t[1], t[2]); }}>Fix blocker: {selP.blocked[0].label}</Btn>}
             <Btn sm kind="quiet" onClick={() => om.setSub("portal")}>Customer view</Btn>
           </div>
+          <div className="om-label" style={{ margin: "16px 0 6px" }}>Deliveries</div>
+          {loadsFor(s, sel.id).length ? loadsFor(s, sel.id).sort((a, b) => b.collect.localeCompare(a.collect)).slice(0, 5).map(l => <div key={l.id} className="om-row om-small" style={{ padding: "4px 0", borderTop: "1px solid var(--border)" }}><RefLink om={om} r={{ kind: "load", id: l.id }} /><span className="om-mono om-faint om-tiny">{stamp(l.collect)}</span><span style={{ marginLeft: "auto" }}><Badge>{l.status}</Badge></span></div>) : <div className="om-faint om-small">No loads yet.</div>}
         </Card>
 
         <Card span={12} title={"Cross-system timeline · " + siteName(om, sel)} sub="People, agents, iThesis, Sage, carriers and the customer on one ordered feed. iThesis and Sage entries are illustrative." right={<Btn sm kind="quiet" onClick={() => om.go("Activity")}>All activity</Btn>}>

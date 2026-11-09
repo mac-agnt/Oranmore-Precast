@@ -40,5 +40,5 @@ export const BAND_KEYS: Record<string, string[]> = {
 };
 export const BAND_TITLE: Record<string, string> = {
   executive: "Oranmore Precast · Executive", commercial: "Oranmore Precast · Commercial", plant: "Oranmore Precast · Brandon & Lound",
-  logistics: "Oranmore Precast · Logistics", finance: "Oranmore Precast · Finance",
+  logistics: "Oranmore Precast · Fleet & Logistics", finance: "Oranmore Precast · Finance",
 };

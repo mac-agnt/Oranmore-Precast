@@ -89,6 +89,8 @@ export interface Carrier { id: string; name: string; base: string; equipment: st
 export interface Invoice {
   id: string; orderId: string; loadId?: string; net: number; stage: InvoiceStage; hold?: string; issued?: string; due?: string; paid?: string;
   sageRef?: string; description: string; history: { at: string; text: string }[];
+  /** Illustrative Sage-side amount when it differs from Pulse (credit note, part payment). */
+  sageNet?: number; sageNote?: string;
 }
 
 export interface Task { id: string; title: string; owner: string; due: string; priority: "High" | "Medium" | "Low"; dept: string; status: TaskStatus; ref: Ref; auto?: string }

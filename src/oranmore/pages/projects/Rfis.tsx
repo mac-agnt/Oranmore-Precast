@@ -80,7 +80,7 @@ export default function Rfis({ om }: { om: Om }) {
           ]} />
         </Card>
 
-        <Card span={4} title="Draft an RFI" sub="The Contract & RFI agent drafts; you send.">
+        <Card span={4} className="om-sticky" title="Draft an RFI" sub="The Contract & RFI agent drafts; you send.">
           <div className="om-col">
             <Field label="Question"><textarea className="om-input" rows={3} value={q} onChange={e => setQ(e.target.value)} placeholder="e.g. Confirm lifting zone for stair core 2" /></Field>
             <Field label="Area"><select className="om-input" value={area} onChange={e => setArea(e.target.value)}>{AREAS.map(a => <option key={a}>{a}</option>)}</select></Field>

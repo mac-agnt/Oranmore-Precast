@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { Om } from "./ui";
 import { Badge, Btn, RefLink } from "./ui";
 import type { OmState, Ref } from "./types";
-import { attention, enquiryRows, PRE_SUBMIT, blockingOpen, orderLabel, capacityWeek, podQueue, financeTotals, approvals, byId } from "./selectors";
+import { attention, enquiryRows, PRE_SUBMIT, blockingOpen, orderLabel, capacityWeek, podQueue, financeTotals, approvals, byId, constraints } from "./selectors";
 import { gbp, num, pct, stamp, dateShort } from "./format";
 
 interface Profile {
@@ -26,6 +26,14 @@ const P: Record<string, Profile> = {
     approvals: ["Flags only. Routes each issue to its owner."], actor: /Ops Watchdog/i,
     issues: s => attention(s).filter(a => a.tone !== "info").map(a => ({ text: a.title, ref: a.ref })),
     run: s => attention(s).filter(a => a.tone === "bad").length + " critical and " + attention(s).filter(a => a.tone === "warn").length + " warning handoffs across " + s.orders.length + " orders.",
+  },
+  constraints: {
+    purpose: "Measures demand against capacity at every step from estimating to cash, names the binding constraint and explains the knock-on. Improving any other step does not raise throughput.",
+    sources: ["Estimator workload", "Design packages and RFIs", "Hollowcore and line capacity", "QA and yard", "Transport plan", "Invoice drafts"],
+    inputs: ["Load on each step", "Value at stake", "Illustrative step capacities agreed with each team"],
+    approvals: ["Flags only. Owners decide what to move.", "Never re-plans production, haulage or people."], actor: /Constraint Analyst/i,
+    issues: s => constraints(s).filter(c => c.tone !== "ok").map(c => ({ text: c.area + ": " + c.title, ref: c.ref })),
+    run: s => { const k = constraints(s); return "Binding: " + k[0].area.toLowerCase() + " at " + pct(k[0].load) + " load. " + k.filter(c => c.tone !== "ok").length + " steps tight or over across " + k.length + " measured."; },
   },
   intake: {
     purpose: "Turns enquiry emails into draft records: customer, development, scope, drawings and due date. Keeps the raw email. Flags low-confidence fields and possible duplicates.",

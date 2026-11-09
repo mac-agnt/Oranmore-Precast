@@ -189,7 +189,7 @@ export default function Portal({ om }: { om: Om }) {
           </div>
         )}
 
-        <div className="om-s-3 om-col" style={{ gap: 14 }}>
+        <div className="om-s-3 om-col om-sticky" style={{ gap: 14 }}>
           <Card title="Privacy filter" sub={role === "customer" ? "Applied to this preview" : "What the customer will not see"}>
             {[
               ["Margin and cost build-up", "Internal pricing only"],

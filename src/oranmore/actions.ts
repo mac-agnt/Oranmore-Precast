@@ -334,3 +334,17 @@ export function addTask(s: OmState, title: string, owner: string, ref: Ref): OmS
   return log({ ...s, tasks: ([{ id, title, owner, due: "2026-11-13", priority: "Medium" as const, dept: "General", status: "Not started" as TaskStatus, ref }] as Task[]).concat(s.tasks) }, "Staff", YOU, "Task created", title, ref);
 }
 export const invoiceById = (s: OmState, id: string): Invoice | undefined => byId(s.invoices, id);
+
+/* ── constraint analysis ───────────────────────────────────────────────── */
+/** Constraint Analyst flags a constraint to its owner as a task. Flag only: nothing is re-planned. */
+export function flagConstraint(s: OmState, id: string, title: string, owner: string, dept: string, ref: Ref, action: string): OmState {
+  const tid = "TSK-K-" + id;
+  if (s.tasks.some(t => t.id === tid && t.status !== "Done")) return s;
+  const due = nowStamp(s).slice(0, 10);
+  const s2: OmState = { ...s, tasks: ([{ id: tid, title: "Constraint: " + title, owner, due, priority: "High" as const, dept, status: "Not started" as TaskStatus, ref, auto: "constraint" }] as Task[]).concat(s.tasks.filter(t => t.id !== tid)) };
+  return log(s2, "Agent", "Constraint Analyst", "Constraint flagged to " + owner, title + ". Suggested: " + action, ref, undefined, "waiting");
+}
+export function runConstraintAnalysis(s: OmState, summary: string, ref: Ref): OmState {
+  return log(s, "Agent", "Constraint Analyst", "Constraint analysis run", summary, ref);
+}
+

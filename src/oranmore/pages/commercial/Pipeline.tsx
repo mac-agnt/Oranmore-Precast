@@ -83,7 +83,7 @@ export default function Pipeline({ om }: { om: Om }) {
           </div>
         </Card>
 
-        <Card span={8} flush title="De-duplicated forecast by building" sub="Weighted value = quote value × probability. Competing bids on one building are mutually exclusive.">
+        <Card span={8} flush className="om-sticky" title="De-duplicated forecast by building" sub="Weighted value = quote value × probability. Competing bids on one building are mutually exclusive.">
           <div className="om-scroll">
             <table className="om-tbl">
               <thead><tr><th>Development</th><th>Bids</th><th className="r">Raw value</th><th className="r">Counted</th><th className="r">Excluded</th></tr></thead>

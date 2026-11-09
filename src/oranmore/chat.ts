@@ -1,7 +1,7 @@
 /* Home AI chat: deterministic, local answers built from the live shared state.
    Every figure quoted is the same value the tables show. No model is called. */
 import type { OmState, Ref } from "./types";
-import { enquiryRows, PRE_SUBMIT, orderLabel, blockingOpen, designFor, podQueue, financeTotals, capacityWeek, byId, account, dev, fmtDue, kpis } from "./selectors";
+import { enquiryRows, PRE_SUBMIT, orderLabel, blockingOpen, designFor, podQueue, financeTotals, capacityWeek, byId, account, dev, fmtDue, kpis, constraints } from "./selectors";
 import { gbp, dateShort, stamp, num, pct } from "./format";
 
 export interface ChatAnswer {
@@ -14,10 +14,12 @@ export const PRESETS = [
   "Show projects blocked before production",
   "Which claimed deliveries lack POD?",
   "What can finance invoice now?",
+  "What is our biggest constraint right now?",
 ];
 
 export function answer(s: OmState, q: string): ChatAnswer {
   const t = q.toLowerCase();
+  if (/(constraint|bottleneck|limit|slowing|throughput|holding (us|the business) back)/.test(t)) return constraintAnswer(s);
   if (/(pod|proof|claimed|deliver|haul|carrier|load)/.test(t)) return pods(s);
   if (/(invoice|finance|bill|sage|cash|held)/.test(t)) return invoices(s);
   if (/(block|before production|stuck|rfi|design|riverside|mace|goldbeck)/.test(t)) return blocked(s);
@@ -118,3 +120,19 @@ function brief(s: OmState): ChatAnswer {
     actions: PRESETS.map((p, i) => [p, i === 0 ? 1 : 0] as [string, number]),
   };
 }
+
+function constraintAnswer(s: OmState): ChatAnswer {
+  const k = constraints(s);
+  const b = k[0];
+  const plant = k.filter(c => c.area === "Plant").sort((x, y) => y.load - x.load)[0];
+  return {
+    tool: "constraint_analysis", effect: "read",
+    text: "The binding constraint is " + b.area.toLowerCase() + ": " + b.title.charAt(0).toLowerCase() + b.title.slice(1) + " (" + pct(b.load) + " load). " + b.downstream + " Suggested: " + b.action
+      + (plant && plant.id !== b.id ? " Plant is not the limit right now: the busiest plant-week is " + pct(plant.load) + "." : ""),
+    cols: ["Area", "Constraint", "Load", "Owner"],
+    rows: k.slice(0, 6).map(c => [c.area, c.title, pct(c.load), c.owner]),
+    refs: k.slice(0, 3).map(c => ({ label: c.area + " · " + c.step, ref: c.ref })),
+    goto: ["Plants & Planning", "constraints"],
+  };
+}
+

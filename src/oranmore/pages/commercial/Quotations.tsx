@@ -46,7 +46,7 @@ export default function Quotations({ om }: { om: Om }) {
           <Kpi label="Open clarifications" value={all.reduce((t, r) => t + r.q.clarifications.filter(c => c.open).length, 0)} sub="questions out to customers" />
           <Kpi label="Won, order created" value={all.filter(r => r.q.status === "Won" && r.order).length + " of " + all.filter(r => r.q.status === "Won").length} sub="no re-keying on award" onClick={() => setF("won")} />
         </div>
-        <Card span={5} flush title="Quotations" right={<Seg<F> value={f} onChange={setF} options={[["open", "Open"], ["pre", "Pre-submit"], ["won", "Won"], ["closed", "Lost / hold"], ["all", "All"]]} />}>
+        <Card span={5} flush className="om-sticky" title="Quotations" right={<Seg<F> value={f} onChange={setF} options={[["open", "Open"], ["pre", "Pre-submit"], ["won", "Won"], ["closed", "Lost / hold"], ["all", "All"]]} />}>
           <Table cols={cols} rows={rows} rowKey={r => r.q.id} selKey={cur?.q.id} onRow={r => setSel(r.q.id)} maxHeight={760} />
         </Card>
         <div className="om-s-7 om-col" style={{ gap: 14 }}>
